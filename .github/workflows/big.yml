@@ -1,1 +1,46 @@
+name: Aggiorna big
 
+on:
+  schedule:
+    - cron: '30 17 * * 1-5'   # lun-ven, dopo le chiusure di Milano e Francoforte
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: big
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Dipendenze
+        run: pip install pandas numpy yfinance reportlab
+      - name: Scarica dati e calcola segnali
+        run: python build.py
+        working-directory: scripts
+      - name: Regole PDF
+        run: python make_pdf.py
+        working-directory: scripts
+      - name: Prepara il sito
+        run: |
+          mkdir _site
+          cp index.html grafico.html _site/
+          cp -r data _site/data
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
