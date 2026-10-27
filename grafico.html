@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>big – grafico</title>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+body{margin:0;background:#fff;color:#1a1a1a;font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}.p{padding:12px 18px}
+h1{margin:0;font-size:20px}.sub{color:#666;font-size:12px}.px{font-size:22px;font-weight:600}.neg{color:#c0392b}.pos{color:#1e8449}
+button,a.b{font:inherit;padding:6px 10px;border:1px solid #c9ccd1;border-radius:6px;background:#fff;cursor:pointer;color:#1a1a1a;text-decoration:none}button:hover,a.b:hover{background:#f3f4f6}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}#ch{height:460px}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+label{display:flex;gap:4px;align-items:center;font-size:13px;margin-right:8px}table{border-collapse:collapse;width:100%}th,td{padding:5px 8px;border-bottom:1px solid #eceef1;text-align:left;white-space:nowrap}th{border-bottom:2px solid #d5d8dd}.w{overflow-x:auto}
+</style></head><body>
+<div class="p"><a class="b" href="index.html">← Elenco</a></div>
+<div class="p" style="padding-top:0"><h1 id="nome">Caricamento…</h1><div class="sub" id="meta"></div><div><span class="px" id="px"></span> <span id="var"></span></div></div>
+<div class="p row" id="sis"></div>
+<div class="p" style="padding-top:0"><div id="ch"></div></div>
+<div class="p row"><button id="xls">Scarica Excel</button><a class="b" href="data/regole_big.pdf" target="_blank">Regole PDF</a><a class="b" id="tv" target="_blank">TradingView</a></div>
+<div class="p w"><h3 style="margin:0 0 6px">Segnali di acquisto</h3><table><thead><tr><th>Data</th><th>Sistema</th><th>Prezzo</th><th>Note</th><th>Giorni fa</th></tr></thead><tbody id="ev"></tbody></table></div>
+<script>
+const $=id=>document.getElementById(id),T=new URLSearchParams(location.search).get("t")||"";
+const TV={".MI":"MIL:",".DE":"XETR:",".PA":"EURONEXT:",".L":"LSE:"},fix=s=>s.replace(/'/g,"’");
+let C,S,on={},series,markers;
+Promise.all([fetch("data/index.json").then(r=>r.json()),fetch("data/charts/"+T.replace(".","_")+".json").then(r=>r.json())]).then(([ix,c])=>{
+ C=c;S=ix.sistemi;S.forEach(s=>on[s.id]=true);
+ $("nome").textContent=fix(c.n)+" ("+c.t+")";$("meta").textContent=c.b+" · ISIN "+c.i+" · ultima barra "+c.u+" · dati generati "+c.gen;
+ const l=c.d[c.d.length-1],p=c.d[c.d.length-2],v=(l[4]/p[4]-1)*100;$("px").textContent=l[4].toFixed(2);$("var").textContent=(v>=0?"+":"")+v.toFixed(2)+"%";$("var").className=v<0?"neg":"pos";
+ const suf=Object.keys(TV).find(k=>c.t.endsWith(k));$("tv").href="https://www.tradingview.com/chart/?symbol="+encodeURIComponent((TV[suf]||"")+c.t.replace(suf||"@@",""));
+ $("sis").innerHTML=S.map(s=>`<label><input type="checkbox" data-id="${s.id}" checked><i class="dot" style="background:${s.colore}"></i>${s.nome}</label>`).join("");
+ $("sis").onchange=e=>{on[e.target.dataset.id]=e.target.checked;mark();list()};
+ const ch=LightweightCharts.createChart($("ch"),{layout:{background:{color:"#fff"},textColor:"#333"},grid:{vertLines:{color:"#f0f1f3"},horzLines:{color:"#f0f1f3"}},rightPriceScale:{borderColor:"#d5d8dd"},timeScale:{borderColor:"#d5d8dd"}});
+ series=ch.addCandlestickSeries({upColor:"#1e8449",downColor:"#c0392b",borderVisible:false,wickUpColor:"#1e8449",wickDownColor:"#c0392b"});
+ series.setData(c.d.map(r=>({time:r[0],open:r[1],high:r[2],low:r[3],close:r[4]})));ch.timeScale().fitContent();
+ new ResizeObserver(()=>ch.applyOptions({width:$("ch").clientWidth})).observe($("ch"));mark();list()
+}).catch(()=>$("nome").textContent="Dati non trovati per "+T);
+const col=id=>S.find(s=>s.id==id).colore,nm=id=>S.find(s=>s.id==id).nome;
+function mark(){series.setMarkers(C.ev.filter(e=>on[e[1]]).map(e=>({time:e[0],position:"belowBar",shape:"arrowUp",color:col(e[1]),text:e[2]})))}
+function list(){$("ev").innerHTML=C.ev.filter(e=>on[e[1]]).reverse().map(e=>`<tr><td>${e[0]}</td><td><i class="dot" style="background:${col(e[1])}"></i>${e[2]}</td><td>${e[3]}</td><td>${fix(e[4])}</td><td>${Math.floor((Date.now()-new Date(e[0]))/864e5)}</td></tr>`).join("")||'<tr><td colspan="5">Nessun segnale con i sistemi selezionati.</td></tr>'}
+$("xls").onclick=()=>{const wb=XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(C.ev.map(e=>({Data:e[0],Sistema:nm(e[1]),Segnale:e[2],Prezzo:e[3],Note:e[4]}))),"Segnali");
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(C.d.map(r=>({Data:r[0],Apertura:r[1],Massimo:r[2],Minimo:r[3],Chiusura:r[4]}))),"Prezzi");XLSX.writeFile(wb,"big_"+C.t+".xlsx")};
+</script></body></html>
