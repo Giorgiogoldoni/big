@@ -5,11 +5,15 @@ from pathlib import Path
 import pandas as pd
 import yfinance as yf
 import systems as S
+from issuers import issuer
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"; CH = DATA / "charts"
 UNIV_URL = "https://raw.githubusercontent.com/Giorgiogoldoni/core/main/data/tickers_universe.json"
 ISHARES = re.compile(r"ISHARES|^ISH|^IS[. ]", re.I)
+# inverso riconosciuto dal nome: "-2x", "Inverse", "Bear", "Daily/Dly ... Short", "Dly ... Inv", "3x Short", "ShortDAX".
+# Non scatta su "Short Duration", "Ultra Short", "Invesco/INV", "Short JPY Long EUR" (non sono inversi di indici).
+INVERSO = re.compile(r"-\s?\d\s?X|\bINVERSE\b|\bBEAR\b|(DAILY|DLY).*\bSHORT\b|\bSHORT\b.*(DAILY|DLY)|(DAILY|DLY).*\bINV\b|\d\s?X\s*(SHORT|INV)\b|\bSHORT[A-Z]*DAX", re.I)
 BATCH, PAUSA, MIN_BARRE = 40, 3, 60
 
 
@@ -26,7 +30,9 @@ def seleziona(strumenti):
     mi = [x for x in strumenti if x["ticker_yf"].endswith(".MI")]
     isin_mi = {x["isin"] for x in mi}
     de = [x for x in strumenti if x["ticker_yf"].endswith(".DE") and ISHARES.search(x["name"]) and x["isin"] not in isin_mi]
-    return [dict(t=x["ticker_yf"], n=x["name"], i=x["isin"], b="Borsa Italiana" if x["ticker_yf"].endswith(".MI") else "Xetra") for x in mi + de]
+    return [dict(t=x["ticker_yf"], n=x["name"], i=x["isin"], b="Borsa Italiana" if x["ticker_yf"].endswith(".MI") else "Xetra",
+                 e=issuer(x["name"]), lv=bool(x.get("is_leveraged")), inv=bool(INVERSO.search(x["name"])),
+                 tp=x.get("product_type"), ac=x.get("asset_class"), acd=x.get("asset_class_confidence") == "default_fallback") for x in mi + de]
 
 
 def pulisci(d):
@@ -85,7 +91,7 @@ def scrivi(universo, dati):
         (CH / (u["t"].replace(".", "_") + ".json")).write_text(json.dumps(ch, separators=(",", ":")), encoding="utf-8")
         ultimi = {}
         for e in ev: ultimi[e[1]] = e[0]
-        righe.append(dict(t=u["t"], n=u["n"], i=u["i"], b=u["b"], p=r(last["Close"]), v=round(float(last["Close"] / prev["Close"] - 1) * 100, 2),
+        righe.append(dict(t=u["t"], n=u["n"], i=u["i"], b=u["b"], e=u["e"], lv=u["lv"], inv=u["inv"], tp=u["tp"], ac=u["ac"], acd=u["acd"], p=r(last["Close"]), v=round(float(last["Close"] / prev["Close"] - 1) * 100, 2),
                           u=ult, s=ultimi, nuovo=bool(meta["nuovo"]), core=meta["core"], ne=len(ev)))
     sistemi = [dict(id=s["id"], nome=s["nome"], colore=s["colore"]) for s in S.SYSTEMS]
     (DATA / "index.json").write_text(json.dumps(dict(gen=gen, sistemi=sistemi, righe=righe), separators=(",", ":")), encoding="utf-8")
