@@ -13,6 +13,7 @@ label{display:flex;gap:4px;align-items:center;font-size:13px;margin-right:8px}ta
 <div class="p"><a class="b" href="index.html">← Elenco</a></div>
 <div class="p" style="padding-top:0"><h1 id="nome">Caricamento…</h1><div class="sub" id="meta"></div><div><span class="px" id="px"></span> <span id="var"></span></div></div>
 <div class="p row" id="sis"></div>
+<div class="p row" style="padding-top:0"><label><input type="checkbox" id="kama" checked><i class="dot" style="background:#f59e0b"></i>KAMA core (10, 2, 30)</label><label><input type="checkbox" id="don" checked><i class="dot" style="background:#64748b"></i>Canale di Donchian (20 barre)</label></div>
 <div class="p" style="padding-top:0"><div id="ch"></div></div>
 <div class="p row"><button id="xls">Scarica Excel</button><a class="b" href="data/regole_big.pdf" target="_blank">Regole PDF</a><a class="b" id="tv" target="_blank">TradingView</a></div>
 <div class="p w"><h3 style="margin:0 0 6px">Segnali di acquisto</h3><table><thead><tr><th>Data</th><th>Sistema</th><th>Prezzo</th><th>Note</th><th>Giorni fa</th></tr></thead><tbody id="ev"></tbody></table></div>
@@ -29,9 +30,21 @@ Promise.all([fetch("data/index.json").then(r=>r.json()),fetch("data/charts/"+T.r
  $("sis").onchange=e=>{on[e.target.dataset.id]=e.target.checked;mark();list()};
  const ch=LightweightCharts.createChart($("ch"),{layout:{background:{color:"#fff"},textColor:"#333"},grid:{vertLines:{color:"#f0f1f3"},horzLines:{color:"#f0f1f3"}},rightPriceScale:{borderColor:"#d5d8dd"},timeScale:{borderColor:"#d5d8dd"}});
  series=ch.addCandlestickSeries({upColor:"#1e8449",downColor:"#c0392b",borderVisible:false,wickUpColor:"#1e8449",wickDownColor:"#c0392b"});
- series.setData(c.d.map(r=>({time:r[0],open:r[1],high:r[2],low:r[3],close:r[4]})));ch.timeScale().fitContent();
+ series.setData(c.d.map(r=>({time:r[0],open:r[1],high:r[2],low:r[3],close:r[4]})));
+ const ln=(color,dash)=>ch.addLineSeries({color,lineWidth:1,lineStyle:dash||0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+ const pts=a=>a.map((v,i)=>v==null?null:{time:c.d[i][0],value:v}).filter(Boolean);
+ const hi=c.d.map(r=>r[2]),lo=c.d.map(r=>r[3]),dn=donch(hi,lo,20);
+ const kS=ln("#f59e0b"),uS=ln("#64748b"),lS=ln("#64748b"),mS=ln("#94a3b8",2);
+ kS.setData(pts(kama(c.d.map(r=>r[4]))));uS.setData(pts(dn.u));lS.setData(pts(dn.l));mS.setData(pts(dn.u.map((v,i)=>v==null?null:(v+dn.l[i])/2)));
+ $("kama").onchange=()=>kS.applyOptions({visible:$("kama").checked});
+ $("don").onchange=()=>[uS,lS,mS].forEach(x=>x.applyOptions({visible:$("don").checked}));
+ ch.timeScale().fitContent();
  new ResizeObserver(()=>ch.applyOptions({width:$("ch").clientWidth})).observe($("ch"));mark();list()
 }).catch(()=>$("nome").textContent="Dati non trovati per "+T);
+function kama(c,n=10,f=2,s=30){const fs=2/(f+1),ss=2/(s+1),o=new Array(c.length).fill(null);if(c.length<=n)return o;o[n]=c[n];
+ for(let i=n+1;i<c.length;i++){const d=Math.abs(c[i]-c[i-n]);let v=0;for(let j=i-n+1;j<=i;j++)v+=Math.abs(c[j]-c[j-1]);const er=v?d/v:0,sc=(er*(fs-ss)+ss)**2;o[i]=o[i-1]+sc*(c[i]-o[i-1])}return o}
+function donch(h,l,n){const u=new Array(h.length).fill(null),d=new Array(h.length).fill(null);
+ for(let i=n-1;i<h.length;i++){u[i]=Math.max(...h.slice(i-n+1,i+1));d[i]=Math.min(...l.slice(i-n+1,i+1))}return{u,l:d}}
 const col=id=>S.find(s=>s.id==id).colore,nm=id=>S.find(s=>s.id==id).nome;
 function mark(){series.setMarkers(C.ev.filter(e=>on[e[1]]).map(e=>({time:e[0],position:"belowBar",shape:"arrowUp",color:col(e[1]),text:e[2]})))}
 function list(){$("ev").innerHTML=C.ev.filter(e=>on[e[1]]).reverse().map(e=>`<tr><td>${e[0]}</td><td><i class="dot" style="background:${col(e[1])}"></i>${e[2]}</td><td>${e[3]}</td><td>${fix(e[4])}</td><td>${Math.floor((Date.now()-new Date(e[0]))/864e5)}</td></tr>`).join("")||'<tr><td colspan="5">Nessun segnale con i sistemi selezionati.</td></tr>'}
