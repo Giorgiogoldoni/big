@@ -7,44 +7,60 @@ body{margin:0;background:#fff;color:#1a1a1a;font:14px/1.4 system-ui,-apple-syste
 header,.bar,.wrap{padding:12px 18px}header{padding-bottom:0}h1{margin:0;font-size:22px}.sub{color:#666;font-size:12px;margin-top:2px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}input,select,button{font:inherit;padding:6px 10px;border:1px solid #c9ccd1;border-radius:6px;background:#fff}
 button{cursor:pointer}button:hover{background:#f3f4f6}label{display:flex;gap:5px;align-items:center}
-.wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:900px}th,td{padding:6px 8px;border-bottom:1px solid #eceef1;text-align:left;white-space:nowrap}
+.wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1100px}th,td{padding:6px 8px;border-bottom:1px solid #eceef1;text-align:left;white-space:nowrap}
 th{position:sticky;top:0;background:#fff;cursor:pointer;font-weight:600;border-bottom:2px solid #d5d8dd}td.n{text-align:right}.neg{color:#c0392b}.pos{color:#1e8449}
-a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}.new{font-size:11px;background:#e8f5e9;color:#1e8449;border-radius:4px;padding:1px 5px;margin-left:5px}
-.leg{display:flex;flex-wrap:wrap;gap:12px;padding:0 18px;font-size:12px;color:#555}
+a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
+.tag{font-size:11px;border-radius:4px;padding:1px 5px;margin-left:5px}.new{background:#e8f5e9;color:#1e8449}.lev{background:#fff3e0;color:#b45309}.inv{background:#fde8e8;color:#b42318}
+.leg{display:flex;flex-wrap:wrap;gap:12px;padding:0 18px;font-size:12px;color:#555}.conf{font-weight:600}.f{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:2px;background:#d5d8dd}.f.on{background:#1d4ed8}
 </style></head><body>
 <header><h1>big – segnali di acquisto sugli ETF</h1><div class="sub" id="sub">Caricamento…</div></header>
 <div class="bar">
-<input id="q" placeholder="Cerca ticker, nome, ISIN" size="26">
+<input id="q" placeholder="Cerca ticker, nome, ISIN" size="24">
 <select id="sis"><option value="">Tutti i sistemi</option></select>
-<select id="fin"><option value="0">Qualsiasi data</option><option value="5">Ultimi 5 giorni</option><option value="10">Ultimi 10 giorni</option><option value="30">Ultimi 30 giorni</option><option value="90">Ultimi 90 giorni</option></select>
+<select id="fin" title="Finestra: giorni di calendario prima dell’ultima barra"><option value="5">Ultimi 5 giorni</option><option value="10">Ultimi 10 giorni</option><option value="30">Ultimi 30 giorni</option></select>
+<select id="min" title="Famiglie di sistemi con un segnale nella finestra"><option value="0">Qualsiasi confluenza</option><option value="1" selected>Confluenza ≥ 1</option><option value="2">Confluenza ≥ 2</option><option value="3">Confluenza ≥ 3</option><option value="4">Confluenza 4</option></select>
+<select id="lev"><option value="">Tutti (ETF, leva, inversi)</option><option value="n">Solo ETF normali</option><option value="l">Solo leva e inversi</option></select>
+<select id="emi"><option value="">Tutti gli emittenti</option></select>
+<select id="tip"><option value="">Tutti i tipi</option></select>
+<select id="cla"><option value="">Tutte le classi</option></select>
 <select id="bor"><option value="">Tutte le borse</option><option>Borsa Italiana</option><option>Xetra</option></select>
 <label><input type="checkbox" id="nuovo"> Solo core “Acq. nuovo”</label>
 <button id="xls">Scarica Excel</button><a href="data/regole_big.pdf" target="_blank"><button>Regole PDF</button></a>
 <span id="cnt" class="sub"></span></div>
 <div class="leg" id="leg"></div>
+<div class="leg" style="padding-top:4px">Confluenza = quante famiglie di sistemi hanno un segnale nella finestra: Trend (Core, Az BUY, Super Best Buy), Momentum, Indicatori (Compra dal), Inversione (Inversione, MR, SMR). Date di calendario rispetto all’ultima barra di ogni ETF. * classe indicativa.</div>
 <div class="wrap"><table><thead><tr id="th"></tr></thead><tbody id="tb"></tbody></table></div>
 <script>
-let D=null,sort={k:"u",d:-1};const $=id=>document.getElementById(id);
-const fix=n=>n.replace(/'/g,"’");
+let D=null,sort={k:"conf",d:-1};const $=id=>document.getElementById(id);
+const fix=n=>String(n).replace(/'/g,"’");
+const FAM=[["Trend",["core","azb","sbb"]],["Momentum",["mom"]],["Indicatori",["cd"]],["Inversione",["inv","mr","smr"]]];
+const CLA={equity:"Azionari",bond:"Obbligazionari",commodity:"Materie prime",crypto:"Cripto",leva_short:"Leva / short"};
+const fill=(id,vals,lab)=>[...new Set(vals.filter(Boolean))].sort().forEach(v=>$(id).add(new Option(lab?lab(v):v,v)));
 fetch("data/index.json").then(r=>r.json()).then(j=>{D=j;
  $("sub").textContent="Dati generati "+j.gen+" · barre giornaliere Yahoo Finance · solo ingressi di acquisto, nessun backtest";
  j.sistemi.forEach(s=>{$("sis").add(new Option(s.nome,s.id));$("leg").insertAdjacentHTML("beforeend",`<span><i class="dot" style="background:${s.colore}"></i>${s.nome}</span>`)});
+ fill("emi",j.righe.map(r=>r.e));fill("tip",j.righe.map(r=>r.tp));fill("cla",j.righe.map(r=>r.ac),v=>CLA[v]||v);
  head();draw()}).catch(e=>$("sub").textContent="Dati non disponibili: avvia il workflow “Aggiorna big” da Actions.");
-const cols=()=>[["t","Ticker"],["n","Nome"],["b","Borsa"],["p","Prezzo"],["v","Var %"],["u","Ultima barra"],...D.sistemi.map(s=>["s."+s.id,s.nome])];
+const cols=()=>[["t","Ticker"],["n","Nome"],["e","Emittente"],["ac","Classe"],["tp","Tipo"],["conf","Confluenza"],["p","Prezzo"],["v","Var %"],["u","Ultima barra"],...D.sistemi.map(s=>["s."+s.id,s.nome])];
 function head(){$("th").innerHTML=cols().map(c=>`<th data-k="${c[0]}">${c[1]}</th>`).join("");
  $("th").onclick=e=>{const k=e.target.dataset.k;if(!k)return;sort={k,d:sort.k==k?-sort.d:-1};draw()}}
 const get=(r,k)=>k.startsWith("s.")?(r.s[k.slice(2)]||""):r[k];
-const giorni=d=>d?Math.floor((Date.now()-new Date(d))/864e5):9999;
-function rows(){const q=$("q").value.toLowerCase(),s=$("sis").value,f=+$("fin").value,b=$("bor").value,nw=$("nuovo").checked;
- return D.righe.filter(r=>(!q||(r.t+r.n+r.i).toLowerCase().includes(q))&&(!b||r.b==b)&&(!nw||r.nuovo)&&
-  (!s&&!f?true:(s?[s]:D.sistemi.map(x=>x.id)).some(id=>r.s[id]&&(!f||giorni(r.s[id])<=f))))
- .sort((a,c)=>{const x=get(a,sort.k),y=get(c,sort.k);return (x>y?1:x<y?-1:0)*sort.d})}
+const gg=(a,b)=>Math.round((new Date(b)-new Date(a))/864e5);   // giorni di calendario tra due date
+function annota(R,W){R.forEach(r=>{r.rec={};D.sistemi.forEach(s=>{const d=r.s[s.id];r.rec[s.id]=!!d&&gg(d,r.u)<=W});
+ r.fam=FAM.map(f=>f[1].some(id=>r.rec[id]));r.conf=r.fam.filter(Boolean).length;r.nsis=Object.values(r.rec).filter(Boolean).length})}
+function rows(){const q=$("q").value.toLowerCase(),s=$("sis").value,W=+$("fin").value,mn=+$("min").value,lv=$("lev").value,b=$("bor").value,nw=$("nuovo").checked,e=$("emi").value,t=$("tip").value,c=$("cla").value;
+ annota(D.righe,W);
+ return D.righe.filter(r=>(!q||(r.t+r.n+r.i).toLowerCase().includes(q))&&(!b||r.b==b)&&(!nw||r.nuovo)&&(!e||r.e==e)&&(!t||r.tp==t)&&(!c||r.ac==c)&&
+  (!lv||(lv=="l")==(r.lv||r.inv))&&(s?r.rec[s]:r.conf>=mn))
+ .sort((a,c)=>{const x=get(a,sort.k),y=get(c,sort.k);let o=(x>y?1:x<y?-1:0)*sort.d;return o||(c.nsis-a.nsis)||(a.u<c.u?1:-1)})}
 function draw(){const R=rows();$("cnt").textContent=R.length+" ETF";
- $("tb").innerHTML=R.slice(0,1500).map(r=>`<tr><td><a href="grafico.html?t=${encodeURIComponent(r.t)}">${r.t}</a>${r.nuovo?'<span class="new">Acq. nuovo</span>':""}</td><td>${fix(r.n)}</td><td>${r.b}</td><td class="n">${r.p}</td><td class="n ${r.v<0?"neg":"pos"}">${r.v}</td><td>${r.u}</td>`+
+ $("tb").innerHTML=R.slice(0,1500).map(r=>`<tr><td><a href="grafico.html?t=${encodeURIComponent(r.t)}">${r.t}</a>${r.nuovo?'<span class="tag new">Acq. nuovo</span>':""}${r.inv?'<span class="tag inv">Inverso</span>':r.lv?'<span class="tag lev">Leva</span>':""}</td><td>${fix(r.n)}</td><td>${r.e}</td><td>${CLA[r.ac]||r.ac||""}${r.acd?"*":""}</td><td>${r.tp||""}</td>`+
+ `<td class="conf" title="${FAM.map((f,i)=>f[0]+(r.fam[i]?" ✓":" –")).join(" · ")}">${r.conf}/4 ${r.fam.map(x=>`<i class="f${x?" on":""}"></i>`).join("")}</td><td class="n">${r.p}</td><td class="n ${r.v<0?"neg":"pos"}">${r.v}</td><td>${r.u}</td>`+
  D.sistemi.map(s=>`<td>${r.s[s.id]?`<i class="dot" style="background:${s.colore}"></i>${r.s[s.id]}`:""}</td>`).join("")+"</tr>").join("");
  if(R.length>1500)$("cnt").textContent+=" (mostrati i primi 1500: usa i filtri o scarica l’Excel)"}
-["q","sis","fin","bor","nuovo"].forEach(i=>$(i).addEventListener("input",draw));
-$("xls").onclick=()=>{const R=rows().map(r=>{const o={Ticker:r.t,Nome:r.n,ISIN:r.i,Borsa:r.b,Prezzo:r.p,"Var %":r.v,"Ultima barra":r.u,"Core ora":r.core||"","Acq. nuovo":r.nuovo?"Sì":""};
- D.sistemi.forEach(s=>o["Ultimo segnale "+s.nome]=r.s[s.id]||"");return o});
+["q","sis","fin","min","lev","emi","tip","cla","bor","nuovo"].forEach(i=>$(i).addEventListener("input",draw));
+$("xls").onclick=()=>{const R=rows().map(r=>{const o={Ticker:r.t,Nome:r.n,ISIN:r.i,Emittente:r.e,Classe:CLA[r.ac]||r.ac||"",Tipo:r.tp||"",Leva:r.lv?"Sì":"",Inverso:r.inv?"Sì":"",Borsa:r.b,Prezzo:r.p,"Var %":r.v,"Ultima barra":r.u,
+ ["Confluenza ("+$("fin").value+"gg)"]:r.conf,"Core ora":r.core||"","Acq. nuovo":r.nuovo?"Sì":""};
+ FAM.forEach((f,i)=>o["Famiglia "+f[0]]=r.fam[i]?"Sì":"");D.sistemi.forEach(s=>o["Ultimo segnale "+s.nome]=r.s[s.id]||"");return o});
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(R),"big");XLSX.writeFile(wb,"big_segnali.xlsx")};
 </script></body></html>
