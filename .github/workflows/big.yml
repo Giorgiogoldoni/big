@@ -2,8 +2,14 @@ name: Aggiorna big
 
 on:
   schedule:
-    - cron: '30 17 * * 1-5'   # lun-ven, dopo le chiusure di Milano e Francoforte
+    - cron: '30 17 * * 1-5'   # lun-ven, dopo le chiusure di Milano e Francoforte: segnali e grafici (2 anni)
+    - cron: '0 6 * * 6'       # sabato: in piu' la classifica dei sistemi (5 anni, piu' lento)
   workflow_dispatch:
+    inputs:
+      classifica:
+        description: 'Ricalcola anche la classifica (5 anni, piu lento)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -17,7 +23,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 110
+    timeout-minutes: 170
+    env:
+      CLASSIFICA: ${{ (github.event.schedule == '0 6 * * 6' || inputs.classifica) && '1' || '0' }}
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -37,7 +45,7 @@ jobs:
       - name: Prepara il sito
         run: |
           mkdir _site
-          cp index.html grafico.html _site/
+          cp index.html grafico.html classifica.html _site/
           cp -r data _site/data
       - uses: actions/upload-pages-artifact@v3
         with:
