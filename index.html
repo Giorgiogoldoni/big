@@ -25,42 +25,48 @@ a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}.dot{disp
 <select id="cla"><option value="">Tutte le classi</option></select>
 <select id="bor"><option value="">Tutte le borse</option><option>Borsa Italiana</option><option>Xetra</option></select>
 <label><input type="checkbox" id="nuovo"> Solo core “Acq. nuovo”</label>
-<button id="xls">Scarica Excel</button><a href="data/regole_big.pdf" target="_blank"><button>Regole PDF</button></a>
+<select id="ori" title="Orizzonte della classifica: barre dopo il segnale"><option value="5">Classifica +5 barre</option><option value="10" selected>Classifica +10 barre</option><option value="20">Classifica +20 barre</option><option value="60">Classifica +60 barre</option></select>
+<label><input type="checkbox" id="aff"> Solo miglior sistema affidabile</label>
+<button id="xls">Scarica Excel</button><a href="data/regole_big.pdf" target="_blank"><button>Regole PDF</button></a><a href="classifica.html"><button>Classifica sistemi</button></a>
 <span id="cnt" class="sub"></span></div>
 <div class="leg" id="leg"></div>
-<div class="leg" style="padding-top:4px">Confluenza = quante famiglie di sistemi hanno un segnale nella finestra: Trend (Core, Az BUY, Super Best Buy, Parabolic SAR), Momentum, Indicatori (Compra dal), Inversione (Inversione, MR, SMR). Date di calendario rispetto all’ultima barra di ogni ETF. * classe indicativa.</div>
+<div class="leg" style="padding-top:4px">Confluenza = quante famiglie di sistemi hanno un segnale nella finestra: Trend (Core, Az BUY, Super Best Buy, Parabolic SAR), Momentum, Indicatori (Compra dal), Inversione (Inversione, MR, SMR). Date di calendario rispetto all’ultima barra di ogni ETF. * classe indicativa. Miglior sistema: dalla pagina Classifica (storia 5 anni, aggiornata il sabato); “non verificato” = eccesso positivo ma senza prove sufficienti.</div>
 <div class="wrap"><table><thead><tr id="th"></tr></thead><tbody id="tb"></tbody></table></div>
 <script>
-let D=null,sort={k:"conf",d:-1};const $=id=>document.getElementById(id);
+let D=null,M=null,sort={k:"conf",d:-1};const $=id=>document.getElementById(id);
 const fix=n=>String(n).replace(/'/g,"’");
 const FAM=[["Trend",["core","azb","sbb","psar"]],["Momentum",["mom"]],["Indicatori",["cd"]],["Inversione",["inv","mr","smr"]]];
 const CLA={equity:"Azionari",bond:"Obbligazionari",commodity:"Materie prime",crypto:"Cripto",leva_short:"Leva / short"};
 const fill=(id,vals,lab)=>[...new Set(vals.filter(Boolean))].sort().forEach(v=>$(id).add(new Option(lab?lab(v):v,v)));
+fetch("data/classifica_sintesi.json").then(r=>r.ok?r.json():null).then(j=>{M=j;if(D)draw()}).catch(()=>{});
 fetch("data/index.json").then(r=>r.json()).then(j=>{D=j;
  $("sub").textContent="Dati generati "+j.gen+" · barre giornaliere Yahoo Finance · solo ingressi di acquisto, nessun backtest";
  j.sistemi.forEach(s=>{$("sis").add(new Option(s.nome,s.id));$("leg").insertAdjacentHTML("beforeend",`<span><i class="dot" style="background:${s.colore}"></i>${s.nome}</span>`)});
  fill("emi",j.righe.map(r=>r.e));fill("tip",j.righe.map(r=>r.tp));fill("cla",j.righe.map(r=>r.ac),v=>CLA[v]||v);
  head();draw()}).catch(e=>$("sub").textContent="Dati non disponibili: avvia il workflow “Aggiorna big” da Actions.");
-const cols=()=>[["t","Ticker"],["n","Nome"],["e","Emittente"],["ac","Classe"],["tp","Tipo"],["conf","Confluenza"],["p","Prezzo"],["v","Var %"],["u","Ultima barra"],...D.sistemi.map(s=>["s."+s.id,s.nome])];
+const cols=()=>[["t","Ticker"],["n","Nome"],["e","Emittente"],["ac","Classe"],["tp","Tipo"],["conf","Confluenza"],["migs","Miglior sistema"],["p","Prezzo"],["v","Var %"],["u","Ultima barra"],...D.sistemi.map(s=>["s."+s.id,s.nome])];
 function head(){$("th").innerHTML=cols().map(c=>`<th data-k="${c[0]}">${c[1]}</th>`).join("");
  $("th").onclick=e=>{const k=e.target.dataset.k;if(!k)return;sort={k,d:sort.k==k?-sort.d:-1};draw()}}
 const get=(r,k)=>k.startsWith("s.")?(r.s[k.slice(2)]||""):r[k];
 const gg=(a,b)=>Math.round((new Date(b)-new Date(a))/864e5);   // giorni di calendario tra due date
 function annota(R,W){R.forEach(r=>{r.rec={};D.sistemi.forEach(s=>{const d=r.s[s.id];r.rec[s.id]=!!d&&gg(d,r.u)<=W});
- r.fam=FAM.map(f=>f[1].some(id=>r.rec[id]));r.conf=r.fam.filter(Boolean).length;r.nsis=Object.values(r.rec).filter(Boolean).length})}
+ r.fam=FAM.map(f=>f[1].some(id=>r.rec[id]));r.conf=r.fam.filter(Boolean).length;r.nsis=Object.values(r.rec).filter(Boolean).length;const O=$("ori").value,x=M&&M.mig[r.t]&&M.mig[r.t][O];r.mg=x||null;r.migs=x&&x[0]?(x[1]=="ok"?2000:1000)+(x[2]||0):-1})}
+const ESITO={ok:"affidabile",nv:"non verificato",no:"nessuno",nd:"dati insufficienti"};
+const MG=r=>{const x=r.mg;if(!x)return "";const q=x[0]&&D.sistemi.find(z=>z.id==x[0]);return (q?`<i class="dot" style="background:${q.colore}"></i>${q.nome} `:"")+`<span class="tag ${x[1]=="ok"?"new":x[1]=="nv"?"lev":""}" style="${x[1]=="no"||x[1]=="nd"?"background:#eee;color:#555":""}">${ESITO[x[1]]}</span>`};
+const tipMG=r=>r.mg&&r.mg[0]?`Eccesso mediano ${r.mg[2]}% a +${$("ori").value} barre · ${r.mg[3]} segnali · ${r.mg[4]}% positivi`:"";
 function rows(){const q=$("q").value.toLowerCase(),s=$("sis").value,W=+$("fin").value,mn=+$("min").value,lv=$("lev").value,b=$("bor").value,nw=$("nuovo").checked,e=$("emi").value,t=$("tip").value,c=$("cla").value;
  annota(D.righe,W);
  return D.righe.filter(r=>(!q||(r.t+r.n+r.i).toLowerCase().includes(q))&&(!b||r.b==b)&&(!nw||r.nuovo)&&(!e||r.e==e)&&(!t||r.tp==t)&&(!c||r.ac==c)&&
-  (!lv||(lv=="l")==(r.lv||r.inv))&&(s?r.rec[s]:r.conf>=mn))
+  (!lv||(lv=="l")==(r.lv||r.inv))&&(s?r.rec[s]:r.conf>=mn)&&(!$("aff").checked||(r.mg&&r.mg[1]=="ok")))
  .sort((a,c)=>{const x=get(a,sort.k),y=get(c,sort.k);let o=(x>y?1:x<y?-1:0)*sort.d;return o||(c.nsis-a.nsis)||(a.u<c.u?1:-1)})}
 function draw(){const R=rows();$("cnt").textContent=R.length+" ETF";
  $("tb").innerHTML=R.slice(0,1500).map(r=>`<tr><td><a href="grafico.html?t=${encodeURIComponent(r.t)}">${r.t}</a>${r.nuovo?'<span class="tag new">Acq. nuovo</span>':""}${r.inv?'<span class="tag inv">Inverso</span>':r.lv?'<span class="tag lev">Leva</span>':""}</td><td>${fix(r.n)}</td><td>${r.e}</td><td>${CLA[r.ac]||r.ac||""}${r.acd?"*":""}</td><td>${r.tp||""}</td>`+
- `<td class="conf" title="${FAM.map((f,i)=>f[0]+(r.fam[i]?" ✓":" –")).join(" · ")}">${r.conf}/4 ${r.fam.map(x=>`<i class="f${x?" on":""}"></i>`).join("")}</td><td class="n">${r.p}</td><td class="n ${r.v<0?"neg":"pos"}">${r.v}</td><td>${r.u}</td>`+
+ `<td class="conf" title="${FAM.map((f,i)=>f[0]+(r.fam[i]?" ✓":" –")).join(" · ")}">${r.conf}/4 ${r.fam.map(x=>`<i class="f${x?" on":""}"></i>`).join("")}</td><td title="${tipMG(r)}">${MG(r)}</td><td class="n">${r.p}</td><td class="n ${r.v<0?"neg":"pos"}">${r.v}</td><td>${r.u}</td>`+
  D.sistemi.map(s=>`<td>${r.s[s.id]?`<i class="dot" style="background:${s.colore}"></i>${r.s[s.id]}`:""}</td>`).join("")+"</tr>").join("");
  if(R.length>1500)$("cnt").textContent+=" (mostrati i primi 1500: usa i filtri o scarica l’Excel)"}
-["q","sis","fin","min","lev","emi","tip","cla","bor","nuovo"].forEach(i=>$(i).addEventListener("input",draw));
+["q","sis","fin","min","lev","emi","tip","cla","bor","nuovo","ori","aff"].forEach(i=>$(i).addEventListener("input",draw));
 $("xls").onclick=()=>{const R=rows().map(r=>{const o={Ticker:r.t,Nome:r.n,ISIN:r.i,Emittente:r.e,Classe:CLA[r.ac]||r.ac||"",Tipo:r.tp||"",Leva:r.lv?"Sì":"",Inverso:r.inv?"Sì":"",Borsa:r.b,Prezzo:r.p,"Var %":r.v,"Ultima barra":r.u,
- ["Confluenza ("+$("fin").value+"gg)"]:r.conf,"Core ora":r.core||"","Acq. nuovo":r.nuovo?"Sì":""};
+ ["Confluenza ("+$("fin").value+"gg)"]:r.conf,"Core ora":r.core||"","Acq. nuovo":r.nuovo?"Sì":"",["Miglior sistema +"+$("ori").value]:(r.mg&&r.mg[0]?D.sistemi.find(q=>q.id==r.mg[0]).nome:""),"Esito classifica":r.mg?ESITO[r.mg[1]]:""};
  FAM.forEach((f,i)=>o["Famiglia "+f[0]]=r.fam[i]?"Sì":"");D.sistemi.forEach(s=>o["Ultimo segnale "+s.nome]=r.s[s.id]||"");return o});
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(R),"big");XLSX.writeFile(wb,"big_segnali.xlsx")};
 </script></body></html>
