@@ -32,6 +32,48 @@ def ev_momentum(df, ctx):
     return out
 
 
+# ---------------- Parabolic SAR strategy (TradingView, 0,02 / 0,02 / 0,2) ----------------
+def ev_psar(df, ctx, start=0.02, inc=0.02, mx=0.2):
+    """Port letterale dello script Pine 'Parabolic SAR strategy'. Ingresso long = scatta lo stop di acquisto sul SAR della barra dopo
+    (ParLE). Il lato short (ParSE) non si disegna ma chiude il long, come in TradingView."""
+    o, h, l, c = (df[k].values for k in ("Open", "High", "Low", "Close"))
+    n = len(c); out = []; pos = 0; pend = None
+    up = False; EP = AF = nxt = None; AF = start
+    for i in range(n):
+        if pend is not None:                                   # ordine stop messo alla chiusura precedente
+            side, stop = pend
+            if side == "L" and h[i] >= stop:
+                if pos != 1: out.append((i, float(max(o[i], stop)), "PSAR", "Stop buy sul SAR (ParLE)"))
+                pos = 1
+            elif side == "S" and l[i] <= stop:
+                pos = -1
+        pend = None
+        if i == 0: continue
+        first = False; sar = nxt
+        if i == 1:
+            if c[1] > c[0]: up = True; EP = h[1]; psar = l[0]; pep = h[1]
+            else: up = False; EP = l[1]; psar = h[0]; pep = l[1]
+            first = True; sar = psar + start * (pep - psar)
+        if up:
+            if sar > l[i]: first = True; up = False; sar = max(EP, h[i]); EP = l[i]; AF = start
+        else:
+            if sar < h[i]: first = True; up = True; sar = min(EP, l[i]); EP = h[i]; AF = start
+        if not first:
+            if up:
+                if h[i] > EP: EP = h[i]; AF = min(AF + inc, mx)
+            else:
+                if l[i] < EP: EP = l[i]; AF = min(AF + inc, mx)
+        if up:
+            sar = min(sar, l[i - 1])
+            if i > 1: sar = min(sar, l[i - 2])
+        else:
+            sar = max(sar, h[i - 1])
+            if i > 1: sar = max(sar, h[i - 2])
+        nxt = sar + AF * (EP - sar)
+        pend = ("S", nxt) if up else ("L", nxt)
+    return out
+
+
 # ---------------- Compra dal (G): saldo aggregato indicatori+medie di investing >= Compra ----------------
 def _wil(s, n): return s.ewm(alpha=1 / n, adjust=False, min_periods=n).mean()
 def _vote(v, lo, hi): return np.where(np.isnan(v), np.nan, np.where(v >= hi, 1.0, np.where(v <= lo, -1.0, 0.0)))
@@ -131,6 +173,10 @@ SYSTEMS = [
               "La freccia e' sul primo giorno in cui il segnale si accende."]),
  dict(id="sbb", nome="Super Best Buy", colore="#0891b2", fn=ev_sbb,
       regole=["SAR rialzista con flip da 2 barre o meno e AO in miglioramento (2 rialzi consecutivi). Freccia sul primo giorno."]),
+ dict(id="psar", nome="Parabolic SAR", colore="#ca8a04", fn=ev_psar,
+      regole=["Strategia TradingView 'Parabolic SAR strategy' (partenza 0,02, incremento 0,02, massimo 0,2), copiata dallo script Pine.",
+              "Con SAR ribassista si piazza uno stop di acquisto sul SAR della barra dopo. La freccia e' sulla barra in cui scatta, al maggiore tra apertura e SAR.",
+              "Il lato short non si disegna ma chiude il long come in TradingView. Nella confluenza e' nella famiglia Trend."]),
  dict(id="mr", nome="Mean Reversion", colore="#854d0e", fn=ev_mr,
       regole=["Prezzo sotto banda di Bollinger inferiore (20, 2), RSI14<30 e Hurst 60<0,45 (titolo che oscilla). Uscita alla banda superiore."]),
  dict(id="smr", nome="Super Mean Reversion", colore="#475569", fn=ev_smr,
