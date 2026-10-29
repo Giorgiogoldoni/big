@@ -28,12 +28,12 @@ a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}.dot{disp
 <button id="xls">Scarica Excel</button><a href="data/regole_big.pdf" target="_blank"><button>Regole PDF</button></a>
 <span id="cnt" class="sub"></span></div>
 <div class="leg" id="leg"></div>
-<div class="leg" style="padding-top:4px">Confluenza = quante famiglie di sistemi hanno un segnale nella finestra: Trend (Core, Az BUY, Super Best Buy), Momentum, Indicatori (Compra dal), Inversione (Inversione, MR, SMR). Date di calendario rispetto all’ultima barra di ogni ETF. * classe indicativa.</div>
+<div class="leg" style="padding-top:4px">Confluenza = quante famiglie di sistemi hanno un segnale nella finestra: Trend (Core, Az BUY, Super Best Buy, Parabolic SAR), Momentum, Indicatori (Compra dal), Inversione (Inversione, MR, SMR). Date di calendario rispetto all’ultima barra di ogni ETF. * classe indicativa.</div>
 <div class="wrap"><table><thead><tr id="th"></tr></thead><tbody id="tb"></tbody></table></div>
 <script>
 let D=null,sort={k:"conf",d:-1};const $=id=>document.getElementById(id);
 const fix=n=>String(n).replace(/'/g,"’");
-const FAM=[["Trend",["core","azb","sbb"]],["Momentum",["mom"]],["Indicatori",["cd"]],["Inversione",["inv","mr","smr"]]];
+const FAM=[["Trend",["core","azb","sbb","psar"]],["Momentum",["mom"]],["Indicatori",["cd"]],["Inversione",["inv","mr","smr"]]];
 const CLA={equity:"Azionari",bond:"Obbligazionari",commodity:"Materie prime",crypto:"Cripto",leva_short:"Leva / short"};
 const fill=(id,vals,lab)=>[...new Set(vals.filter(Boolean))].sort().forEach(v=>$(id).add(new Option(lab?lab(v):v,v)));
 fetch("data/index.json").then(r=>r.json()).then(j=>{D=j;
