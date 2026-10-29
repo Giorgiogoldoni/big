@@ -1,10 +1,11 @@
 """big: scarica le barre giornaliere (Yahoo, 2 anni), calcola i segnali di acquisto di ogni sistema e scrive i dati per le pagine.
 Universo: tutti i .MI di core + gli iShares .DE che non hanno gia' un .MI (core tiene un solo ticker per ISIN, priorita' al .MI)."""
-import json, re, sys, time, datetime as dt, urllib.request
+import json, os, re, sys, time, datetime as dt, urllib.request
 from pathlib import Path
 import pandas as pd
 import yfinance as yf
 import systems as S
+import rank
 from issuers import issuer
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,6 +16,9 @@ ISHARES = re.compile(r"ISHARES|^ISH|^IS[. ]", re.I)
 # Non scatta su "Short Duration", "Ultra Short", "Invesco/INV", "Short JPY Long EUR" (non sono inversi di indici).
 INVERSO = re.compile(r"-\s?\d\s?X|\bINVERSE\b|\bBEAR\b|(DAILY|DLY).*\bSHORT\b|\bSHORT\b.*(DAILY|DLY)|(DAILY|DLY).*\bINV\b|\d\s?X\s*(SHORT|INV)\b|\bSHORT[A-Z]*DAX", re.I)
 BATCH, PAUSA, MIN_BARRE = 40, 3, 60
+CLASSIFICA = os.environ.get("CLASSIFICA") == "1"      # run settimanale: scarica 5 anni e ricalcola la classifica
+PERIODO = "5y" if CLASSIFICA else "2y"
+LIVE = "https://giorgiogoldoni.github.io/big/data/"
 
 
 def carica_universo():
@@ -50,7 +54,7 @@ def scarica(tickers):
     for k in range(0, len(tickers), BATCH):
         b = tickers[k:k + BATCH]
         try:
-            raw = yf.download(b, period="2y", interval="1d", auto_adjust=False, group_by="ticker", threads=True, progress=False)
+            raw = yf.download(b, period=PERIODO, interval="1d", auto_adjust=False, group_by="ticker", threads=True, progress=False)
         except Exception as e:
             print("batch", k, "errore", repr(e)[:80]); raw = None
         for t in b:
@@ -64,7 +68,7 @@ def scarica(tickers):
         print("scaricati", min(k + BATCH, len(tickers)), "/", len(tickers), flush=True); time.sleep(PAUSA)
     for t in [t for t in tickers if t not in out]:           # secondo tentativo, uno per volta
         try:
-            d = pulisci(yf.Ticker(t).history(period="2y", interval="1d", auto_adjust=False))
+            d = pulisci(yf.Ticker(t).history(period=PERIODO, interval="1d", auto_adjust=False))
             if d is not None: out[t] = d
         except Exception:
             pass
@@ -75,12 +79,16 @@ def scarica(tickers):
 def scrivi(universo, dati):
     CH.mkdir(parents=True, exist_ok=True)
     gen = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    righe, errori = [], []
+    righe, errori, rank_rows = [], [], []
     for u in universo:
         d = dati.get(u["t"])
         if d is None: errori.append(u["t"]); continue
+        full = d; d = full[full.index >= full.index[-1] - pd.DateOffset(years=2)]   # grafici: ultimi 2 anni
         try:
-            ev, meta = S.calcola(d)
+            ev, meta = S.calcola(full if CLASSIFICA else d)
+            if CLASSIFICA:
+                rank_rows.append(rank.riga(u["t"], full, ev))
+                ev = [e for e in ev if e[0] >= str(d.index[0].date())]
         except Exception as e:
             print("ERRORE calcolo", u["t"], repr(e)[:100]); errori.append(u["t"]); continue
         last, prev = d.iloc[-1], d.iloc[-2]; ult = str(d.index[-1].date())
@@ -97,6 +105,17 @@ def scrivi(universo, dati):
     (DATA / "index.json").write_text(json.dumps(dict(gen=gen, sistemi=sistemi, righe=righe), separators=(",", ":")), encoding="utf-8")
     (DATA / "errori.json").write_text(json.dumps(errori), encoding="utf-8")
     print("titoli con dati:", len(righe), "| senza dati:", len(errori))
+    if CLASSIFICA: rank.scrivi(DATA, rank_rows, gen)
+
+
+def recupera_classifica():
+    """Nei run giornalieri la classifica non si ricalcola: si riprende l'ultima pubblicata dal sito."""
+    for nome in ("classifica.json", "classifica_sintesi.json"):
+        try:
+            dati = urllib.request.urlopen(LIVE + nome, timeout=60).read(); json.loads(dati)
+            (DATA / nome).write_bytes(dati); print("classifica precedente recuperata:", nome, len(dati) // 1024, "KB")
+        except Exception as e:
+            print("classifica precedente non disponibile:", nome, repr(e)[:70])
 
 
 if __name__ == "__main__":
@@ -105,3 +124,4 @@ if __name__ == "__main__":
     (DATA / "universo.json").write_text(json.dumps(uni, ensure_ascii=False), encoding="utf-8")
     print("universo:", len(uni), "(.MI %d, iShares .DE %d)" % (sum(x["b"] == "Borsa Italiana" for x in uni), sum(x["b"] == "Xetra" for x in uni)))
     scrivi(uni, scarica([x["t"] for x in uni]))
+    if not CLASSIFICA: recupera_classifica()
