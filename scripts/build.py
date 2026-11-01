@@ -1,4 +1,4 @@
-"""big: scarica le barre giornaliere (Yahoo, 2 anni), calcola i segnali di acquisto di ogni sistema e scrive i dati per le pagine.
+"""big: scarica le barre giornaliere (Yahoo, 2 anni), calcola i segnali di acquisto e le uscite di ogni sistema e scrive i dati per le pagine.
 Universo: tutti i .MI di core + gli iShares .DE che non hanno gia' un .MI (core tiene un solo ticker per ISIN, priorita' al .MI)."""
 import json, os, re, sys, time, datetime as dt, urllib.request
 from pathlib import Path
@@ -89,18 +89,20 @@ def scrivi(universo, dati):
             if CLASSIFICA:
                 rank_rows.append(rank.riga(u["t"], full, ev))
                 ev = [e for e in ev if e[0] >= str(d.index[0].date())]
+                meta["tr"] = [t for t in meta["tr"] if t[1] >= str(d.index[0].date())]
         except Exception as e:
             print("ERRORE calcolo", u["t"], repr(e)[:100]); errori.append(u["t"]); continue
         last, prev = d.iloc[-1], d.iloc[-2]; ult = str(d.index[-1].date())
         r = lambda x: round(float(x), 4)
         ch = dict(t=u["t"], n=u["n"], i=u["i"], b=u["b"], gen=gen, u=ult,
                   d=[[str(i.date()), r(a), r(b), r(c), r(e_)] for i, (a, b, c, e_) in zip(d.index, d[["Open", "High", "Low", "Close"]].values)],
-                  ev=[list(e) for e in ev])
+                  ev=[list(e) for e in ev], tr=meta["tr"])
         (CH / (u["t"].replace(".", "_") + ".json")).write_text(json.dumps(ch, separators=(",", ":")), encoding="utf-8")
         ultimi = {}
         for e in ev: ultimi[e[1]] = e[0]
+        x = {t[0]: [t[1], t[6], t[3], t[5]] for t in meta["tr"]}      # ultima posizione di ogni sistema: ingresso, guadagno %, uscita, motivo
         righe.append(dict(t=u["t"], n=u["n"], i=u["i"], b=u["b"], e=u["e"], lv=u["lv"], inv=u["inv"], tp=u["tp"], ac=u["ac"], acd=u["acd"], p=r(last["Close"]), v=round(float(last["Close"] / prev["Close"] - 1) * 100, 2),
-                          u=ult, s=ultimi, nuovo=bool(meta["nuovo"]), core=meta["core"], ne=len(ev)))
+                          u=ult, s=ultimi, x=x, sta=S.stato_etf(meta["tr"], ult), nuovo=bool(meta["nuovo"]), core=meta["core"], ne=len(ev)))
     sistemi = [dict(id=s["id"], nome=s["nome"], colore=s["colore"]) for s in S.SYSTEMS]
     (DATA / "index.json").write_text(json.dumps(dict(gen=gen, sistemi=sistemi, righe=righe), separators=(",", ":")), encoding="utf-8")
     (DATA / "errori.json").write_text(json.dumps(errori), encoding="utf-8")
