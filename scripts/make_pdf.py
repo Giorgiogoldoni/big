@@ -1,4 +1,4 @@
-"""Regole PDF di big: generato dai sistemi registrati in systems.py, quindi sempre allineato al codice."""
+"""Regole PDF di big: generato dai sistemi registrati in systems.py (ingressi e uscite), quindi sempre allineato al codice."""
 import datetime as dt
 from pathlib import Path
 from reportlab.lib import colors
@@ -21,13 +21,14 @@ def main():
     f = [Paragraph("big - Regole dei segnali di acquisto", H1), Paragraph("Aggiornato il " + adesso, P), Spacer(1, 6)]
     gen = ["Universo: tutti gli ETF/ETP .MI di core e gli iShares .DE che non hanno un .MI (un solo ticker per ISIN, priorita' al .MI).",
            "Dati: barre giornaliere Yahoo Finance, 2 anni, non adjusted. Le barre piatte senza scambi sono scartate prima di ogni calcolo.",
-           "Il grafico mostra solo ingressi di acquisto. Nessun backtest, nessuna commissione, nessun target o stop.",
+           "Il grafico mostra gli ingressi (frecce in su) e le uscite (frecce in giu') di ogni sistema. Nessun backtest, nessuna commissione, nessun target.",
            "Cooldown: stesso ticker e stesso sistema non producono un secondo segnale entro %d giorni. Sistemi diversi non si bloccano a vicenda." % S.COOLDOWN_GIORNI,
            "Le regole dei sistemi sono quelle dei repo di origine (core, azionario, investing, TradingView) e vengono copiate: se cambiano la', big non cambia da solo.",
            "Lettura tecnica a regole proprie, non e' una raccomandazione e non garantisce risultati."]
     f.append(Paragraph("Regole generali", H2)); f += [Paragraph("- " + x, P) for x in gen]
+    f.append(Paragraph("Uscite, posizioni e guadagno", H2)); f += [Paragraph("- " + x.replace("<", "&lt;"), P) for x in S.REGOLE_USCITE]
     for s in S.SYSTEMS:
-        f.append(Paragraph('<font color="%s">&#9632;</font> %s' % (s["colore"], s["nome"]), H2)); f += [Paragraph("- " + x.replace("<", "&lt;"), P) for x in s["regole"]]
+        f.append(Paragraph('<font color="%s">&#9632;</font> %s' % (s["colore"], s["nome"]), H2)); f += [Paragraph("- " + x.replace("<", "&lt;"), P) for x in s["regole"] + [S.USCITE[s["id"]]["testo"]]]
     f.append(Paragraph("Classifica dei sistemi (pagina Classifica, colonna Miglior sistema)", H2)); f += [Paragraph("- " + x, P) for x in rank.REGOLE]
     SimpleDocTemplate(str(OUT), pagesize=A4, leftMargin=18*mm, rightMargin=18*mm, topMargin=16*mm, bottomMargin=16*mm, title="big - regole").build(f)
     print("PDF:", OUT)
