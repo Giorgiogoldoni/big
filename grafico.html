@@ -16,7 +16,7 @@ label{display:flex;gap:4px;align-items:center;font-size:13px;margin-right:8px}ta
 <div class="p row" style="padding-top:0"><label><input type="checkbox" id="kama" checked><i class="dot" style="background:#f59e0b"></i>KAMA core (10, 2, 30)</label><label><input type="checkbox" id="don" checked><i class="dot" style="background:#64748b"></i>Canale di Donchian (20 barre)</label></div>
 <div class="p" style="padding-top:0"><div id="ch"></div></div>
 <div class="p row"><button id="xls">Scarica Excel</button><a class="b" href="data/regole_big.pdf" target="_blank">Regole PDF</a><a class="b" id="tv" target="_blank">TradingView</a></div>
-<div class="p w"><h3 style="margin:0 0 6px">Segnali di acquisto</h3><table><thead><tr><th>Data</th><th>Sistema</th><th>Prezzo</th><th>Note</th><th>Giorni fa</th></tr></thead><tbody id="ev"></tbody></table></div>
+<div class="p w"><h3 style="margin:0 0 6px">Posizioni e guadagno</h3><table><thead><tr><th>Sistema</th><th>Ingresso</th><th>Prezzo</th><th>Uscita</th><th>Prezzo</th><th>Motivo</th><th>Guadagno</th><th>Stato</th></tr></thead><tbody id="tr"></tbody></table><p class="sub">Guadagno lordo, senza commissioni: da ingresso a uscita, o all’ultima chiusura se la posizione è aperta. Non è un backtest.</p><h3 style="margin:14px 0 6px">Segnali di acquisto</h3><table><thead><tr><th>Data</th><th>Sistema</th><th>Prezzo</th><th>Note</th><th>Giorni fa</th></tr></thead><tbody id="ev"></tbody></table></div>
 <script>
 const $=id=>document.getElementById(id),T=new URLSearchParams(location.search).get("t")||"";
 const TV={".MI":"MIL:",".DE":"XETR:",".PA":"EURONEXT:",".L":"LSE:"},fix=s=>s.replace(/'/g,"’");
@@ -46,9 +46,14 @@ function kama(c,n=10,f=2,s=30){const fs=2/(f+1),ss=2/(s+1),o=new Array(c.length)
 function donch(h,l,n){const u=new Array(h.length).fill(null),d=new Array(h.length).fill(null);
  for(let i=n-1;i<h.length;i++){u[i]=Math.max(...h.slice(i-n+1,i+1));d[i]=Math.min(...l.slice(i-n+1,i+1))}return{u,l:d}}
 const col=id=>S.find(s=>s.id==id).colore,nm=id=>S.find(s=>s.id==id).nome;
-function mark(){series.setMarkers(C.ev.filter(e=>on[e[1]]).map(e=>({time:e[0],position:"belowBar",shape:"arrowUp",color:col(e[1]),text:e[2]})))}
-function list(){$("ev").innerHTML=C.ev.filter(e=>on[e[1]]).reverse().map(e=>`<tr><td>${e[0]}</td><td><i class="dot" style="background:${col(e[1])}"></i>${e[2]}</td><td>${e[3]}</td><td>${fix(e[4])}</td><td>${Math.floor((Date.now()-new Date(e[0]))/864e5)}</td></tr>`).join("")||'<tr><td colspan="5">Nessun segnale con i sistemi selezionati.</td></tr>'}
+function mark(){const m=C.ev.filter(e=>on[e[1]]).map(e=>({time:e[0],position:"belowBar",shape:"arrowUp",color:col(e[1]),text:e[2]}));
+ (C.tr||[]).filter(t=>on[t[0]]&&t[3]).forEach(t=>m.push({time:t[3],position:"aboveBar",shape:"arrowDown",color:col(t[0]),text:"Esci"}));
+ m.sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0);series.setMarkers(m)}
+const gn=v=>(v>=0?"+":"")+v.toFixed(2)+"%";
+function list(){$("tr").innerHTML=(C.tr||[]).filter(t=>on[t[0]]).reverse().map(t=>`<tr><td><i class="dot" style="background:${col(t[0])}"></i>${nm(t[0])}</td><td>${t[1]}</td><td>${t[2]}</td><td>${t[3]||""}</td><td>${t[4]||""}</td><td>${t[5]||""}</td><td class="${t[6]<0?"neg":"pos"}">${gn(t[6])}</td><td>${t[3]?"Chiusa":"<b>Aperta</b>"}</td></tr>`).join("")||'<tr><td colspan="8">Nessuna posizione con i sistemi selezionati.</td></tr>';
+ $("ev").innerHTML=C.ev.filter(e=>on[e[1]]).reverse().map(e=>`<tr><td>${e[0]}</td><td><i class="dot" style="background:${col(e[1])}"></i>${e[2]}</td><td>${e[3]}</td><td>${fix(e[4])}</td><td>${Math.floor((Date.now()-new Date(e[0]))/864e5)}</td></tr>`).join("")||'<tr><td colspan="5">Nessun segnale con i sistemi selezionati.</td></tr>'}
 $("xls").onclick=()=>{const wb=XLSX.utils.book_new();
  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(C.ev.map(e=>({Data:e[0],Sistema:nm(e[1]),Segnale:e[2],Prezzo:e[3],Note:e[4]}))),"Segnali");
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet((C.tr||[]).map(t=>({Sistema:nm(t[0]),Ingresso:t[1],"Prezzo ingresso":t[2],Uscita:t[3]||"","Prezzo uscita":t[4]||"",Motivo:t[5]||"","Guadagno %":t[6],Stato:t[3]?"Chiusa":"Aperta"}))),"Posizioni");
  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(C.d.map(r=>({Data:r[0],Apertura:r[1],Massimo:r[2],Minimo:r[3],Chiusura:r[4]}))),"Prezzi");XLSX.writeFile(wb,"big_"+C.t+".xlsx")};
 </script></body></html>
