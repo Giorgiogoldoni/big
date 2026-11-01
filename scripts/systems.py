@@ -1,14 +1,23 @@
 """Sistemi di acquisto di big. Ogni sistema e' un'entry di SYSTEMS: per aggiungerne uno basta una funzione
 ev_xxx(df, ctx) -> lista di (indice_barra, prezzo, etichetta, nota) e una riga in SYSTEMS.
-Si disegnano solo gli ingressi long: le uscite servono solo a sapere quando un sistema puo' rientrare."""
+Gli ingressi long sono le frecce in su. Le uscite si registrano con _esci(ctx, id, ...) dentro ev_xxx (uscite del sistema) oppure con una
+regola che parte dall'ingresso (USCITE, uscita()); da ingresso e uscita nascono le posizioni (trades) con il guadagno in %."""
 import numpy as np
 import pandas as pd
 import az_engine as A
 import core_engine as G
 
+CHAND_ATR = 3.0          # stop comune: massimo dall'ingresso - 3 x ATR14 (stesso moltiplicatore del motore di azionario)
+TEMPO_MAX_INV = 20       # Inversione: uscita a tempo se la KAMA veloce non la chiude prima
+USCITA_RECENTE_GG = 5    # stato ESCI: posizione Trend chiusa negli ultimi 5 giorni di calendario
+FAM_TREND = ("core", "azb", "sbb", "psar")
 COOLDOWN_GIORNI = 10   # come il ledger di azionario: stesso ticker + stesso sistema, niente doppioni entro 10 giorni
 MINTICK = 0.01
 MOM_LEN = 12
+def _esci(ctx, sid, i, prezzo, motivo):
+    ctx.setdefault("uscite", {}).setdefault(sid, []).append((i, float(prezzo), motivo))
+
+
 SOGLIE = {"rsi": (45, 55), "stoch": (45, 55), "adx": 25, "aggregato_compra": 20}   # come investing (regole.json)
 
 
@@ -25,6 +34,7 @@ def ev_momentum(df, ctx):
                 if pos != 1: out.append((i, float(max(o[i], stop)), "MOM", "Stop buy alto+mintick"))
                 pos = 1
             elif side == "S" and l[i] <= stop:
+                if pos == 1: _esci(ctx, "mom", i, min(o[i], stop), "Stop short (mom<0)")
                 pos = -1                           # il lato short non si disegna, ma chiude il long come in TradingView
         if mom0[i] > 0 and mom1[i] > 0: pend = ("L", h[i] + MINTICK)
         elif mom0[i] < 0 and mom1[i] < 0: pend = ("S", l[i] - MINTICK)
@@ -46,6 +56,7 @@ def ev_psar(df, ctx, start=0.02, inc=0.02, mx=0.2):
                 if pos != 1: out.append((i, float(max(o[i], stop)), "PSAR", "Stop buy sul SAR (ParLE)"))
                 pos = 1
             elif side == "S" and l[i] <= stop:
+                if pos == 1: _esci(ctx, "psar", i, min(o[i], stop), "Stop short (ParSE)")
                 pos = -1
         pend = None
         if i == 0: continue
@@ -118,6 +129,7 @@ def ev_compra_dal(df, ctx):
     ok = np.nan_to_num(s, nan=-999) >= SOGLIE["aggregato_compra"]
     for i in range(1, len(s)):
         if ok[i] and not ok[i - 1]: out.append((i, float(c[i]), "CD", "Saldo %+.0f%%" % s[i]))
+        if ok[i - 1] and not ok[i]: _esci(ctx, "cd", i, c[i], "Saldo sotto Compra")
     return out
 
 
@@ -130,6 +142,8 @@ def core_segnali(df):
 
 def ev_core(df, ctx):
     seg = ctx["core_seg"]; c = df["Close"].values; out = []
+    for i in range(len(seg)):
+        if seg[i] in ("EXIT1", "EXIT2"): _esci(ctx, "core", i, c[i], seg[i])
     for i in range(1, len(seg)):
         if seg[i] and seg[i].startswith("BUY") and not (seg[i - 1] or "").startswith("BUY"):
             out.append((i, float(c[i]), "CORE " + seg[i], seg[i]))
@@ -138,15 +152,29 @@ def ev_core(df, ctx):
 
 # ---------------- Motori di azionario ----------------
 def ev_az_buy(df, ctx):
-    r = ctx["az"]; return [(i, float(r["close"][i]), "AZ " + s, s) for i, s in enumerate(r["buy"]) if s in ("BUY2", "BUY3")]
+    r = ctx["az"]
+    for i, s in enumerate(r["buy"]):
+        if s in ("SELL", "STOP"): _esci(ctx, "azb", i, r["close"][i], "Chandelier 3 ATR" if s == "SELL" else "Stop -8%")
+    return [(i, float(r["close"][i]), "AZ " + s, s) for i, s in enumerate(r["buy"]) if s in ("BUY2", "BUY3")]
 
 def _fronti(flags, close, etic, nota):
     return [(i, float(close[i]), etic, nota) for i in range(len(flags)) if flags[i] and (i == 0 or not flags[i - 1])]
 
 def ev_inversione(df, ctx): r = ctx["az"]; return _fronti(r["inv"], r["close"], "INV", "Inversione (2+ trigger)")
-def ev_sbb(df, ctx): r = ctx["az"]; return _fronti(r["sbb"], r["close"], "SBB", "Flip SAR + AO in miglioramento")
-def ev_mr(df, ctx): r = ctx["az"]; return [(i, float(r["close"][i]), "MR", "Banda Bollinger + RSI<30") for i, s in enumerate(r["mr"]) if s == "MR_BUY"]
-def ev_smr(df, ctx): r = ctx["az"]; return [(i, float(r["close"][i]), "SMR", "Calo >=25% + conferma rimbalzo") for i in r["smr_entries"]]
+def ev_sbb(df, ctx):
+    r = ctx["az"]
+    for i, b in enumerate(r.get("sarb", [])):
+        if not b: _esci(ctx, "sbb", i, r["close"][i], "SAR ribassista")
+    return _fronti(r["sbb"], r["close"], "SBB", "Flip SAR + AO in miglioramento")
+def ev_mr(df, ctx):
+    r = ctx["az"]
+    for i, s in enumerate(r["mr"]):
+        if s == "MR_SELL": _esci(ctx, "mr", i, r["close"][i], "Banda Bollinger sup.")
+    return [(i, float(r["close"][i]), "MR", "Banda Bollinger + RSI<30") for i, s in enumerate(r["mr"]) if s == "MR_BUY"]
+def ev_smr(df, ctx):
+    r = ctx["az"]
+    for i, motivo in r.get("smr_exits", []): _esci(ctx, "smr", i, r["close"][i], motivo)
+    return [(i, float(r["close"][i]), "SMR", "Calo >=25% + conferma rimbalzo") for i in r["smr_entries"]]
 
 
 # ---------------- Registro ----------------
@@ -183,13 +211,88 @@ SYSTEMS = [
       regole=["Fase 1: calo >=25% dall'ultimo massimo ZigZag e RSI14<35. Fase 2 (entro 15 barre): RSI5 in salita e chiusura in rialzo = ingresso.",
               "Stop -15% dall'ingresso, uscita alla banda di Bollinger superiore."]),
 ]
+# Uscite: testo per le pagine/PDF e stop comune. chand=True: oltre all'uscita del sistema vale lo stop Chandelier (massimo dall'ingresso - 3 ATR14, chiusura sotto).
+# I sistemi che hanno gia' uno stop proprio (azb, smr) o che sono copie fedeli di TradingView (mom, psar) non hanno lo stop comune.
+USCITE = {
+ "mom":  dict(chand=False, testo="Uscita: scatta lo stop short dello script (mom0<0 e mom1<0); chiude il long al minore tra apertura e stop. Nessuno stop aggiuntivo (copia fedele di TradingView)."),
+ "cd":   dict(chand=True,  testo="Uscita: il saldo scende sotto +20% (non e' piu' Compra), alla chiusura. In piu' stop Chandelier."),
+ "core": dict(chand=True,  testo="Uscita: primo EXIT1 o EXIT2 del motore core (SAR ribassista senza condizioni BUY), alla chiusura. WATCH non e' un'uscita. In piu' stop Chandelier."),
+ "azb":  dict(chand=False, testo="Uscita: Chandelier (massimo dall'ingresso - 3 ATR14) o stop -8% dall'ingresso, come nel motore di azionario."),
+ "inv":  dict(chand=True,  testo="Uscita: prima chiusura sotto la KAMA veloce dopo essere stata sopra, oppure dopo %d barre. In piu' stop Chandelier." % TEMPO_MAX_INV),
+ "sbb":  dict(chand=True,  testo="Uscita: il SAR torna ribassista (chiusura sotto il SAR). In piu' stop Chandelier."),
+ "psar": dict(chand=False, testo="Uscita: scatta lo stop short dello script (ParSE); chiude il long al minore tra apertura e stop. Nessuno stop aggiuntivo (copia fedele di TradingView)."),
+ "mr":   dict(chand=True,  testo="Uscita: chiusura sopra la banda di Bollinger superiore. In piu' stop Chandelier (il motore originale non ha stop)."),
+ "smr":  dict(chand=False, testo="Uscita: chiusura sopra la banda di Bollinger superiore oppure stop -15% dall'ingresso, come nel motore di azionario."),
+}
+REGOLE_USCITE = [
+    "Posizione = un ingresso e la sua uscita. Per ogni sistema una posizione alla volta: una freccia che compare mentre la posizione e' ancora aperta non apre un'altra posizione.",
+    "Guadagno % = prezzo di uscita / prezzo di ingresso - 1; se la posizione e' aperta, ultima chiusura / prezzo di ingresso - 1. Lordo, senza commissioni, senza simulare nulla: non e' un backtest.",
+    "Stop Chandelier comune (dove indicato): massimo dall'ingresso - %g x ATR14; esce alla prima chiusura sotto lo stop." % CHAND_ATR,
+    "Stato dell'ETF sulla famiglia Trend (Core, Az BUY, Super Best Buy, Parabolic SAR): TIENI = almeno una posizione Trend aperta (guadagno della piu' vecchia); ESCI = nessuna aperta e una chiusa negli ultimi %d giorni (guadagno dell'ultima chiusa); FUORI = altrimenti." % USCITA_RECENTE_GG,
+]
 RUMORE = ("Il segnale core scatta spesso: tra un'entrata e l'altra passa poco tempo. Per questo vale il cooldown di %d giorni per ticker e sistema." % COOLDOWN_GIORNI)
+
+def _chand(ctx, i0):
+    h, c, atr = ctx["hi"], ctx["cl"], ctx["atr"]; hh = h[i0]
+    for j in range(i0 + 1, len(c)):
+        hh = max(hh, h[j]); a = atr[j]
+        if a and c[j] < hh - CHAND_ATR * a: return (j, float(c[j]), "Chandelier %g ATR" % CHAND_ATR)
+    return None
+
+
+def _uscita_inv(ctx, i0):
+    c, kf = ctx["cl"], ctx["az"].get("kf") or []
+    ok = lambda j: j < len(kf) and kf[j] is not None
+    sopra = ok(i0) and c[i0] > kf[i0]
+    for j in range(i0 + 1, len(c)):
+        if ok(j):
+            if c[j] > kf[j]: sopra = True
+            elif sopra: return (j, float(c[j]), "Chiusura sotto KAMA veloce")
+        if j - i0 >= TEMPO_MAX_INV: return (j, float(c[j]), "Tempo massimo %d barre" % TEMPO_MAX_INV)
+    return None
+
+
+def uscita(sid, ctx, i0):
+    """Prima uscita dopo la barra di ingresso i0: (indice, prezzo, motivo) oppure None se la posizione e' ancora aperta."""
+    cand = [e for e in [next((e for e in ctx.get("uscite", {}).get(sid, []) if e[0] > i0), None),
+                        _uscita_inv(ctx, i0) if sid == "inv" else None,
+                        _chand(ctx, i0) if USCITE[sid]["chand"] else None] if e]
+    return min(cand, key=lambda e: e[0]) if cand else None
+
+
+def posizioni(df, ctx, ingressi):
+    """ingressi = eventi gia' filtrati dal cooldown. Ritorna [[sistema, data_in, prezzo_in, data_out|None, prezzo_out|None, motivo|None, guadagno%]]."""
+    idx = df.index; pos = {str(d.date()): k for k, d in enumerate(idx)}; ult = float(df["Close"].values[-1]); out = []
+    for s in SYSTEMS:
+        fine = None; aperto = False
+        for e in ingressi:
+            if e[1] != s["id"]: continue
+            i0 = pos[e[0]]
+            if aperto and (fine is None or fine[0] > i0): continue      # ancora in posizione: freccia ripetuta, non e' un nuovo trade
+            fine = uscita(s["id"], ctx, i0); aperto = True
+            if fine: out.append([s["id"], e[0], round(e[3], 4), str(idx[fine[0]].date()), round(fine[1], 4), fine[2], round((fine[1] / e[3] - 1) * 100, 2)])
+            else: out.append([s["id"], e[0], round(e[3], 4), None, None, None, round((ult / e[3] - 1) * 100, 2)])
+    return out
+
+
+def stato_etf(tr, ult):
+    """Stato sulla famiglia Trend: ["TIENI"|"ESCI"|"FUORI", guadagno%|None, data_ingresso|None, data_uscita|None, n_aperte]."""
+    t = [x for x in tr if x[0] in FAM_TREND]
+    ap = sorted([x for x in t if x[3] is None], key=lambda x: x[1])
+    if ap: return ["TIENI", ap[0][6], ap[0][1], None, len(ap)]
+    gg = lambda a, b: (pd.Timestamp(b) - pd.Timestamp(a)).days
+    ch = sorted([x for x in t if x[3] and gg(x[3], ult) <= USCITA_RECENTE_GG], key=lambda x: x[3])
+    if ch: return ["ESCI", ch[-1][6], ch[-1][1], ch[-1][3], 0]
+    return ["FUORI", None, None, None, 0]
+
 
 def calcola(df):
     """df: Open High Low Close Volume, indice date. Ritorna (eventi, meta).
     eventi = [(data, sys_id, etichetta, prezzo, nota)]; meta = stato attuale del segnale core."""
     ctx = {"core_seg": core_segnali(df), "az": A.az_serie(df)}
-    if ctx["az"] is None: ctx["az"] = {"close": df["Close"].values, "buy": [], "mr": [], "smr_entries": [], "sbb": [], "inv": []}
+    if ctx["az"] is None: ctx["az"] = {"close": df["Close"].values, "buy": [], "mr": [], "smr_entries": [], "sbb": [], "inv": [], "sarb": [], "smr_exits": [], "kf": []}
+    ctx["uscite"] = {}; ctx["hi"] = df["High"].values; ctx["cl"] = df["Close"].values
+    ctx["atr"] = A.calc_atr_series(df["High"].tolist(), df["Low"].tolist(), df["Close"].tolist())
     seg = ctx["core_seg"]; n = len(seg); i = n - 1
     core_ora = seg[-1]; nuovo = False; inizio = None
     if core_ora and core_ora.startswith("BUY"):
@@ -204,4 +307,5 @@ def calcola(df):
             last = d
             if s["id"] == "core" and nuovo and str(d.date()) == inizio: etic += " nuovo"; nota += " - Acq. nuovo"
             out.append((str(d.date()), s["id"], etic, round(price, 4), nota))
-    return sorted(out), {"core": core_ora, "nuovo": nuovo}
+    out = sorted(out)
+    return out, {"core": core_ora, "nuovo": nuovo, "tr": posizioni(df, ctx, out)}
