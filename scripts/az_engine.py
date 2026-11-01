@@ -472,6 +472,7 @@ def az_serie(df):
     # ---- Motore SUPER MEAN REVERSION (parallelo, separato) — "compra dopo un forte calo" ----
     rsi5_l = rsi5.tolist()
     smr_entries = []
+    smr_exits = []       # (indice_barra, motivo): uscite del motore, lette da big
     smr_state = "FLAT"   # FLAT -> WATCHING -> LONG
     smr_watch_since = None
     smr_entry_price = None
@@ -501,6 +502,7 @@ def az_serie(df):
             bu = bb_upper_l[idx]
             delta = c / smr_entry_price - 1 if smr_entry_price else 0
             if (bu is not None and not math.isnan(bu) and c >= bu) or delta <= SMR_STOP_PCT:
+                smr_exits.append((idx, "Stop -15%" if delta <= SMR_STOP_PCT else "Banda Bollinger sup."))
                 smr_closed_deltas.append(round(delta * 100, 2))
                 smr_state = "FLAT"; smr_entry_price = None; smr_entry_date = None; smr_watch_since = None
 
@@ -540,4 +542,6 @@ def az_serie(df):
         "dates": df.index, "close": close.values,
         "buy": seg_vals, "mr": mr_seg, "smr_entries": smr_entries,
         "sbb": [bool(x) for x in sbb], "inv": inv,
+        "sarb": [bool(x) for x in sarb_list], "smr_exits": smr_exits,
+        "kf": [None if (v is None or v != v) else float(v) for v in kf_list],
     }
