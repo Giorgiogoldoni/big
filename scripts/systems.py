@@ -10,10 +10,12 @@ import core_engine as G
 CHAND_ATR = 3.0          # stop comune: massimo dall'ingresso - 3 x ATR14 (stesso moltiplicatore del motore di azionario)
 TEMPO_MAX_INV = 20       # Inversione: uscita a tempo se la KAMA veloce non la chiude prima
 USCITA_RECENTE_GG = 5    # stato ESCI: posizione Trend chiusa negli ultimi 5 giorni di calendario
-FAM_TREND = ("core", "azb", "sbb", "psar")
+FAM_TREND = ("core", "azb", "sbb", "psar", "adx", "ema")
 COOLDOWN_GIORNI = 10   # come il ledger di azionario: stesso ticker + stesso sistema, niente doppioni entro 10 giorni
 MINTICK = 0.01
 MOM_LEN = 12
+ADX_MIN = 20             # ADX: soglia di forza del trend (investing usa 25 per il voto, qui 20 per entrare prima)
+EMA_FAST, EMA_SLOW = 20, 50
 def _esci(ctx, sid, i, prezzo, motivo):
     ctx.setdefault("uscite", {}).setdefault(sid, []).append((i, float(prezzo), motivo))
 
@@ -177,6 +179,37 @@ def ev_smr(df, ctx):
     return [(i, float(r["close"][i]), "SMR", "Calo >=25% + conferma rimbalzo") for i in r["smr_entries"]]
 
 
+# ---------------- ADX / DMI (Wilder, 14): +DI sopra -DI con trend abbastanza forte ----------------
+def _dmi(df):
+    h, l, c = df["High"], df["Low"], df["Close"]; pc = c.shift(1)
+    tr = pd.concat([h - l, (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1); atr = _wil(tr, 14)
+    pdm = h.diff().where((h.diff() > -l.diff()) & (h.diff() > 0), 0.0); mdm = (-l.diff()).where((-l.diff() > h.diff()) & (-l.diff() > 0), 0.0)
+    pdi = 100 * _wil(pdm, 14) / atr; mdi = 100 * _wil(mdm, 14) / atr
+    return pdi.values, mdi.values, _wil(100 * (pdi - mdi).abs() / (pdi + mdi), 14).values
+
+def ev_adx(df, ctx):
+    pdi, mdi, adx = _dmi(df); c = df["Close"].values; out = []
+    for i in range(1, len(c)):
+        if np.isnan(pdi[i]) or np.isnan(mdi[i]) or np.isnan(pdi[i - 1]) or np.isnan(mdi[i - 1]): continue
+        if pdi[i] > mdi[i] and pdi[i - 1] <= mdi[i - 1]:
+            if not np.isnan(adx[i]) and adx[i] >= ADX_MIN: out.append((i, float(c[i]), "ADX", "+DI sopra -DI, ADX %.0f" % adx[i]))
+        elif pdi[i] < mdi[i] and pdi[i - 1] >= mdi[i - 1]:
+            _esci(ctx, "adx", i, c[i], "-DI sopra +DI")
+    return out
+
+
+# ---------------- Incrocio medie mobili: EMA 20 sopra EMA 50 ----------------
+def ev_ema(df, ctx):
+    c = df["Close"]
+    f = c.ewm(span=EMA_FAST, adjust=False, min_periods=EMA_SLOW).mean().values
+    s = c.ewm(span=EMA_SLOW, adjust=False, min_periods=EMA_SLOW).mean().values; cv = c.values; out = []
+    for i in range(1, len(cv)):
+        if np.isnan(f[i]) or np.isnan(s[i]) or np.isnan(f[i - 1]) or np.isnan(s[i - 1]): continue
+        if f[i] > s[i] and f[i - 1] <= s[i - 1]: out.append((i, float(cv[i]), "EMA", "EMA %d sopra EMA %d" % (EMA_FAST, EMA_SLOW)))
+        elif f[i] < s[i] and f[i - 1] >= s[i - 1]: _esci(ctx, "ema", i, cv[i], "EMA %d sotto EMA %d" % (EMA_FAST, EMA_SLOW))
+    return out
+
+
 # ---------------- Registro ----------------
 SYSTEMS = [
  dict(id="mom", nome="Momentum", colore="#1d4ed8", fn=ev_momentum,
@@ -205,6 +238,12 @@ SYSTEMS = [
       regole=["Strategia TradingView 'Parabolic SAR strategy' (partenza 0,02, incremento 0,02, massimo 0,2), copiata dallo script Pine.",
               "Con SAR ribassista si piazza uno stop di acquisto sul SAR della barra dopo. La freccia e' sulla barra in cui scatta, al maggiore tra apertura e SAR.",
               "Il lato short non si disegna ma chiude il long come in TradingView. Nella confluenza e' nella famiglia Trend."]),
+ dict(id="adx", nome="ADX", colore="#65a30d", fn=ev_adx,
+      regole=["DMI di Wilder a 14 periodi (+DI, -DI, ADX). La freccia e' sul giorno in cui +DI incrocia sopra -DI con ADX >= 20 (trend abbastanza forte).",
+              "Se l'incrocio avviene con ADX sotto 20 non c'e' freccia. Nella confluenza e' nella famiglia Trend."]),
+ dict(id="ema", nome="Incrocio EMA 20/50", colore="#6366f1", fn=ev_ema,
+      regole=["Media esponenziale a 20 giorni che incrocia al rialzo quella a 50 giorni, alla chiusura. Si parte dopo 50 barre di dati.",
+              "Nella confluenza e' nella famiglia Trend. E' un segnale in ritardo e dà molti falsi segnali nei periodi laterali."]),
  dict(id="mr", nome="Mean Reversion", colore="#854d0e", fn=ev_mr,
       regole=["Prezzo sotto banda di Bollinger inferiore (20, 2), RSI14<30 e Hurst 60<0,45 (titolo che oscilla). Uscita alla banda superiore."]),
  dict(id="smr", nome="Super Mean Reversion", colore="#475569", fn=ev_smr,
@@ -220,6 +259,8 @@ USCITE = {
  "azb":  dict(chand=False, testo="Uscita: Chandelier (massimo dall'ingresso - 3 ATR14) o stop -8% dall'ingresso, come nel motore di azionario."),
  "inv":  dict(chand=True,  testo="Uscita: prima chiusura sotto la KAMA veloce dopo essere stata sopra, oppure dopo %d barre. In piu' stop Chandelier." % TEMPO_MAX_INV),
  "sbb":  dict(chand=True,  testo="Uscita: il SAR torna ribassista (chiusura sotto il SAR). In piu' stop Chandelier."),
+ "adx":  dict(chand=True,  testo="Uscita: -DI torna sopra +DI, alla chiusura (anche con ADX basso). In piu' stop Chandelier."),
+ "ema":  dict(chand=True,  testo="Uscita: la EMA 20 scende sotto la EMA 50, alla chiusura. In piu' stop Chandelier."),
  "psar": dict(chand=False, testo="Uscita: scatta lo stop short dello script (ParSE); chiude il long al minore tra apertura e stop. Nessuno stop aggiuntivo (copia fedele di TradingView)."),
  "mr":   dict(chand=True,  testo="Uscita: chiusura sopra la banda di Bollinger superiore. In piu' stop Chandelier (il motore originale non ha stop)."),
  "smr":  dict(chand=False, testo="Uscita: chiusura sopra la banda di Bollinger superiore oppure stop -15% dall'ingresso, come nel motore di azionario."),
@@ -228,7 +269,7 @@ REGOLE_USCITE = [
     "Posizione = un ingresso e la sua uscita. Per ogni sistema una posizione alla volta: una freccia che compare mentre la posizione e' ancora aperta non apre un'altra posizione.",
     "Guadagno % = prezzo di uscita / prezzo di ingresso - 1; se la posizione e' aperta, ultima chiusura / prezzo di ingresso - 1. Lordo, senza commissioni, senza simulare nulla: non e' un backtest.",
     "Stop Chandelier comune (dove indicato): massimo dall'ingresso - %g x ATR14; esce alla prima chiusura sotto lo stop." % CHAND_ATR,
-    "Stato dell'ETF sulla famiglia Trend (Core, Az BUY, Super Best Buy, Parabolic SAR): TIENI = almeno una posizione Trend aperta (guadagno della piu' vecchia); ESCI = nessuna aperta e una chiusa negli ultimi %d giorni (guadagno dell'ultima chiusa); FUORI = altrimenti." % USCITA_RECENTE_GG,
+    "Stato dell'ETF sulla famiglia Trend (Core, Az BUY, Super Best Buy, Parabolic SAR, ADX, Incrocio EMA): TIENI = almeno una posizione Trend aperta (guadagno della piu' vecchia); ESCI = nessuna aperta e una chiusa negli ultimi %d giorni (guadagno dell'ultima chiusa); FUORI = altrimenti." % USCITA_RECENTE_GG,
 ]
 RUMORE = ("Il segnale core scatta spesso: tra un'entrata e l'altra passa poco tempo. Per questo vale il cooldown di %d giorni per ticker e sistema." % COOLDOWN_GIORNI)
 
