@@ -13,7 +13,7 @@ label{display:flex;gap:4px;align-items:center;font-size:13px;margin-right:8px}ta
 <div class="p"><a class="b" href="index.html">← Elenco</a></div>
 <div class="p" style="padding-top:0"><h1 id="nome">Caricamento…</h1><div class="sub" id="meta"></div><div><span class="px" id="px"></span> <span id="var"></span></div></div>
 <div class="p row" id="sis"></div>
-<div class="p row" style="padding-top:0"><label><input type="checkbox" id="kama" checked><i class="dot" style="background:#f59e0b"></i>KAMA core (10, 2, 30)</label><label><input type="checkbox" id="don" checked><i class="dot" style="background:#64748b"></i>Canale di Donchian (20 barre)</label></div>
+<div class="p row" style="padding-top:0"><label><input type="checkbox" id="kama" checked><i class="dot" style="background:#f59e0b"></i>KAMA core (10, 2, 30)</label><label><input type="checkbox" id="don" checked><i class="dot" style="background:#64748b"></i>Canale di Donchian (20 barre)</label><label><input type="checkbox" id="cloud"><i class="dot" style="background:#22c55e"></i>KAMA Cloud (nuvola, solo grafico)</label></div>
 <div class="p" style="padding-top:0"><div id="ch"></div></div>
 <div class="p row"><button id="xls">Scarica Excel</button><a class="b" href="data/regole_big.pdf" target="_blank">Regole PDF</a><a class="b" id="tv" target="_blank">TradingView</a></div>
 <div class="p w"><h3 style="margin:0 0 6px">Posizioni e guadagno</h3><table><thead><tr><th>Sistema</th><th>Ingresso</th><th>Prezzo</th><th>Uscita</th><th>Prezzo</th><th>Motivo</th><th>Guadagno</th><th>Stato</th></tr></thead><tbody id="tr"></tbody></table><p class="sub">Guadagno lordo, senza commissioni: da ingresso a uscita, o all’ultima chiusura se la posizione è aperta. Non è un backtest.</p><h3 style="margin:14px 0 6px">Segnali di acquisto</h3><table><thead><tr><th>Data</th><th>Sistema</th><th>Prezzo</th><th>Note</th><th>Giorni fa</th></tr></thead><tbody id="ev"></tbody></table></div>
@@ -38,6 +38,11 @@ Promise.all([fetch("data/index.json").then(r=>r.json()),fetch("data/charts/"+T.r
  kS.setData(pts(kama(c.d.map(r=>r[4]))));uS.setData(pts(dn.u));lS.setData(pts(dn.l));mS.setData(pts(dn.u.map((v,i)=>v==null?null:(v+dn.l[i])/2)));
  $("kama").onchange=()=>kS.applyOptions({visible:$("kama").checked});
  $("don").onchange=()=>[uS,lS,mS].forEach(x=>x.applyOptions({visible:$("don").checked}));
+ const cd=kamaCloud(c.d),tm=c.d.map(r=>r[0]),gl=(w)=>ch.addLineSeries({color:"#6b7280",lineWidth:w,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,visible:false});
+ const c1=gl(2),c2=gl(2),c3=gl(1);c1.setData(pts(cd.k100));c2.setData(pts(cd.cloud));c3.setData(pts(cd.cma));
+ const VE="rgba(34,197,94,.35)",RO="rgba(239,68,68,.35)",bA=cloudBand(ch,series,tm,cd.k100,cd.cloud,i=>cd.td[i]>0?VE:RO),bB=cloudBand(ch,series,tm,cd.cloud,cd.cma,i=>cd.cloud[i]>cd.cma[i]?VE:RO);
+ try{series.attachPrimitive(bA);series.attachPrimitive(bB)}catch(e){}
+ $("cloud").onchange=()=>{const v=$("cloud").checked;[c1,c2,c3].forEach(x=>x.applyOptions({visible:v}));bA.setVisible(v);bB.setVisible(v)};
  ch.timeScale().fitContent();
  new ResizeObserver(()=>ch.applyOptions({width:$("ch").clientWidth})).observe($("ch"));mark();list()
 }).catch(()=>$("nome").textContent="Dati non trovati per "+T);
@@ -45,6 +50,19 @@ function kama(c,n=10,f=2,s=30){const fs=2/(f+1),ss=2/(s+1),o=new Array(c.length)
  for(let i=n+1;i<c.length;i++){const d=Math.abs(c[i]-c[i-n]);let v=0;for(let j=i-n+1;j<=i;j++)v+=Math.abs(c[j]-c[j-1]);const er=v?d/v:0,sc=(er*(fs-ss)+ss)**2;o[i]=o[i-1]+sc*(c[i]-o[i-1])}return o}
 function donch(h,l,n){const u=new Array(h.length).fill(null),d=new Array(h.length).fill(null);
  for(let i=n-1;i<h.length;i++){u[i]=Math.max(...h.slice(i-n+1,i+1));d[i]=Math.min(...l.slice(i-n+1,i+1))}return{u,l:d}}
+function kamaCl(x,L){const n=x.length,o=new Array(n).fill(null);let a=0;while(a<n&&x[a]==null)a++;if(n-a<=L)return o;o[a+L]=x[a+L];
+ for(let i=a+L+1;i<n;i++){const sg=Math.abs(x[i]-x[i-L]);let nz=0;for(let j=i-L+1;j<=i;j++)nz+=Math.abs(x[j]-x[j-1]);const er=nz?sg/nz:0,sm=(er*(0.666-0.0645)+0.0645)**2;o[i]=o[i-1]+sm*(x[i]-o[i-1])}return o}
+function kamaCloud(d){const n=d.length,cl=d.map(r=>r[4]),oh=d.map(r=>(r[1]+r[2]+r[3]+r[4])/4),Ls=[5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,100],M=Ls.map(L=>kamaCl(oh,L)),
+ td=new Array(n).fill(null),cloud=new Array(n).fill(null),k100=kamaCl(cl,100);
+ for(let i=0;i<n;i++){if(M.some(m=>m[i]==null)||k100[i]==null)continue;let t=0;for(let k=0;k<18;k++)t+=(M[k][i]-M[k+1][i])/M[k+1][i];td[i]=t/18;cloud[i]=k100[i]*(1+td[i]*10)}
+ return{k100:k100.map((v,i)=>td[i]==null?null:v),cloud,td,cma:kamaCl(cloud,10)}}
+function cloudBand(chart,ser,tm,up,lo,col){let req=null,vis=false;
+ const rend={draw(t){if(!vis)return;try{t.useBitmapCoordinateSpace(({context:x,horizontalPixelRatio:hr,verticalPixelRatio:vr})=>{const ts=chart.timeScale();let q=null;
+  for(let i=0;i<tm.length;i++){const u=up[i],l=lo[i];if(u==null||l==null){q=null;continue}
+   const X=ts.timeToCoordinate(tm[i]),U=ser.priceToCoordinate(u),L=ser.priceToCoordinate(l);if(X==null||U==null||L==null){q=null;continue}
+   if(q){x.fillStyle=col(i);x.beginPath();x.moveTo(q.x*hr,q.u*vr);x.lineTo(X*hr,U*vr);x.lineTo(X*hr,L*vr);x.lineTo(q.x*hr,q.l*vr);x.closePath();x.fill()}
+   q={x:X,u:U,l:L}}})}catch(e){}}},view={zOrder:()=>"bottom",renderer:()=>rend};
+ return{attached(p){req=p.requestUpdate},detached(){req=null},paneViews:()=>[view],updateAllViews(){},setVisible(v){vis=v;if(req)req()}}}
 const col=id=>S.find(s=>s.id==id).colore,nm=id=>S.find(s=>s.id==id).nome;
 function mark(){const m=C.ev.filter(e=>on[e[1]]).map(e=>({time:e[0],position:"belowBar",shape:"arrowUp",color:col(e[1]),text:e[2]}));
  (C.tr||[]).filter(t=>on[t[0]]&&t[3]).forEach(t=>m.push({time:t[3],position:"aboveBar",shape:"arrowDown",color:col(t[0]),text:"Esci"}));
