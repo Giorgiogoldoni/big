@@ -16,6 +16,7 @@ MINTICK = 0.01
 MOM_LEN = 12
 ADX_MIN = 20             # ADX: soglia di forza del trend (investing usa 25 per il voto, qui 20 per entrare prima)
 EMA_FAST, EMA_SLOW = 20, 50
+KAMAL_LEN = 5            # Kamal 5: barre del canale (massimo/minimo delle 5 barre precedenti, la corrente esclusa)
 def _esci(ctx, sid, i, prezzo, motivo):
     ctx.setdefault("uscite", {}).setdefault(sid, []).append((i, float(prezzo), motivo))
 
@@ -210,6 +211,23 @@ def ev_ema(df, ctx):
     return out
 
 
+# ---------------- Kamal 5 (TradingView "Kamal 5 Tick Trading Setup"): rottura del canale a 5 barre ----------------
+def ev_kamal5(df, ctx):
+    """Port letterale dello script Pine. Chiusura sopra il massimo delle 5 barre precedenti = BUY (se non si e' gia' long); chiusura sotto il
+    minimo delle 5 barre precedenti = SELL (se non si e' gia' short). Il SELL non si disegna ma chiude il long, come in TradingView."""
+    h, l, c = df["High"].values, df["Low"].values, df["Close"].values
+    out, pos = [], 0
+    for i in range(KAMAL_LEN, len(c)):
+        hh = h[i - KAMAL_LEN:i].max(); ll = l[i - KAMAL_LEN:i].min()
+        buy = c[i] > hh and pos != 1
+        sell = c[i] < ll and pos != -1
+        if buy:
+            pos = 1; out.append((i, float(c[i]), "K5", "Chiusura sopra il massimo di %d barre (%.6g)" % (KAMAL_LEN, hh)))
+        if sell:
+            pos = -1; _esci(ctx, "k5", i, c[i], "Chiusura sotto il minimo di %d barre" % KAMAL_LEN)
+    return out
+
+
 # ---------------- Registro ----------------
 SYSTEMS = [
  dict(id="mom", nome="Momentum", colore="#1d4ed8", fn=ev_momentum,
@@ -244,6 +262,11 @@ SYSTEMS = [
  dict(id="ema", nome="Incrocio EMA 20/50", colore="#6366f1", fn=ev_ema,
       regole=["Media esponenziale a 20 giorni che incrocia al rialzo quella a 50 giorni, alla chiusura. Si parte dopo 50 barre di dati.",
               "Nella confluenza e' nella famiglia Trend. E' un segnale in ritardo e dà molti falsi segnali nei periodi laterali."]),
+ dict(id="k5", nome="Kamal 5", colore="#0f766e", fn=ev_kamal5,
+      regole=["Strategia TradingView 'Kamal 5 Tick Trading Setup', copiata dallo script Pine. Nonostante il nome lavora sulle barre giornaliere, non sui tick.",
+              "Canale a 5 barre: massimo e minimo delle 5 barre precedenti (la barra corrente e' esclusa). BUY = chiusura sopra il massimo, solo se non si e' gia' long.",
+              "SELL = chiusura sotto il minimo, solo se non si e' gia' short. Il SELL non si disegna ma chiude il long: dopo un SELL si puo' avere un nuovo BUY.",
+              "Nella confluenza e' una famiglia a se' (Breakout). Segnale molto sensibile: nei periodi laterali da' molti falsi segnali, spesso per pochi centesimi di scarto."]),
  dict(id="mr", nome="Mean Reversion", colore="#854d0e", fn=ev_mr,
       regole=["Prezzo sotto banda di Bollinger inferiore (20, 2), RSI14<30 e Hurst 60<0,45 (titolo che oscilla). Uscita alla banda superiore."]),
  dict(id="smr", nome="Super Mean Reversion", colore="#475569", fn=ev_smr,
@@ -261,10 +284,19 @@ USCITE = {
  "sbb":  dict(chand=True,  testo="Uscita: il SAR torna ribassista (chiusura sotto il SAR). In piu' stop Chandelier."),
  "adx":  dict(chand=True,  testo="Uscita: -DI torna sopra +DI, alla chiusura (anche con ADX basso). In piu' stop Chandelier."),
  "ema":  dict(chand=True,  testo="Uscita: la EMA 20 scende sotto la EMA 50, alla chiusura. In piu' stop Chandelier."),
+ "k5":   dict(chand=False, testo="Uscita: la chiusura scende sotto il minimo delle %d barre precedenti (SELL dello script), alla chiusura. Nessuno stop aggiuntivo (copia fedele di TradingView)." % KAMAL_LEN),
  "psar": dict(chand=False, testo="Uscita: scatta lo stop short dello script (ParSE); chiude il long al minore tra apertura e stop. Nessuno stop aggiuntivo (copia fedele di TradingView)."),
  "mr":   dict(chand=True,  testo="Uscita: chiusura sopra la banda di Bollinger superiore. In piu' stop Chandelier (il motore originale non ha stop)."),
  "smr":  dict(chand=False, testo="Uscita: chiusura sopra la banda di Bollinger superiore oppure stop -15% dall'ingresso, come nel motore di azionario."),
 }
+# Indicatori solo grafici (nessuna freccia, nessuna posizione): compaiono nel PDF delle regole.
+REGOLE_GRAFICO = [
+    "KAMA Cloud (nuvola): replica dello script TradingView 'KAMA Cloud' di mertenes3. Solo grafico, spenta di default (casella sopra il grafico); non genera segnali ne' posizioni.",
+    "Si calcolano 19 KAMA su ohlc4 con lunghezze 5, 10, 15 ... 90 e 100 (costanti veloce 0,666 e lenta 0,0645). Distanza media = media delle 18 distanze relative tra KAMA adiacenti: (KAMA corta - KAMA lunga) / KAMA lunga.",
+    "Linea 1 = KAMA 100 sulla chiusura. Linea 2 = linea 1 x (1 + 10 x distanza media). Linea 3 = KAMA 10 calcolata sulla linea 2.",
+    "Riempimento tra linea 1 e linea 2: verde se la distanza media e' positiva, rosso se negativa. Riempimento tra linea 2 e linea 3: verde se la linea 2 e' sopra la linea 3, rosso altrimenti.",
+    "Differenza dallo script: ogni KAMA parte dal prezzo della prima barra utile invece che da zero, perche' il grafico ha solo 2 anni di storia. La nuvola compare dopo 100 barre e coincide con TradingView solo dopo circa un anno di storia.",
+]
 REGOLE_USCITE = [
     "Posizione = un ingresso e la sua uscita. Per ogni sistema una posizione alla volta: una freccia che compare mentre la posizione e' ancora aperta non apre un'altra posizione.",
     "Guadagno % = prezzo di uscita / prezzo di ingresso - 1; se la posizione e' aperta, ultima chiusura / prezzo di ingresso - 1. Lordo, senza commissioni, senza simulare nulla: non e' un backtest.",
