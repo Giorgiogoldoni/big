@@ -18,7 +18,7 @@ a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}.dot{disp
 <input id="q" placeholder="Cerca ticker, nome, ISIN" size="24">
 <select id="sis"><option value="">Tutti i sistemi</option></select>
 <select id="fin" title="Finestra: giorni di calendario prima dell’ultima barra"><option value="5">Ultimi 5 giorni</option><option value="10">Ultimi 10 giorni</option><option value="30">Ultimi 30 giorni</option></select>
-<select id="min" title="Famiglie di sistemi con un segnale nella finestra"><option value="0">Qualsiasi confluenza</option><option value="1" selected>Confluenza ≥ 1</option><option value="2">Confluenza ≥ 2</option><option value="3">Confluenza ≥ 3</option><option value="4">Confluenza 4</option></select>
+<select id="min" title="Famiglie di sistemi con un segnale nella finestra"><option value="0">Qualsiasi confluenza</option><option value="1" selected>Confluenza ≥ 1</option><option value="2">Confluenza ≥ 2</option><option value="3">Confluenza ≥ 3</option><option value="4">Confluenza ≥ 4</option><option value="5">Confluenza 5</option></select>
 <select id="sta" title="Stato sulla famiglia Trend"><option value="">Tutti gli stati</option><option>TIENI</option><option>ESCI</option><option>FUORI</option></select>
 <select id="lev"><option value="">Tutti (ETF, leva, inversi)</option><option value="n">Solo ETF normali</option><option value="l">Solo leva e inversi</option></select>
 <select id="emi"><option value="">Tutti gli emittenti</option></select>
@@ -31,12 +31,12 @@ a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}.dot{disp
 <button id="xls">Scarica Excel</button><a href="data/regole_big.pdf" target="_blank"><button>Regole PDF</button></a><a href="classifica.html"><button>Classifica sistemi</button></a>
 <span id="cnt" class="sub"></span></div>
 <div class="leg" id="leg"></div>
-<div class="leg" style="padding-top:4px">Confluenza = quante famiglie di sistemi hanno un segnale nella finestra: Trend (Core, Az BUY, Super Best Buy, Parabolic SAR, ADX, Incrocio EMA), Momentum, Indicatori (Compra dal), Inversione (Inversione, MR, SMR). Date di calendario rispetto all’ultima barra di ogni ETF. * classe indicativa. Stato (famiglia Trend): TIENI = almeno una posizione Trend aperta; ESCI = posizioni Trend chiuse negli ultimi 5 giorni; FUORI = nessuna. Guadagno = variazione % da ingresso a uscita (▶ aperta: fino all’ultima chiusura, ■ chiusa), lordo e senza commissioni, non è un backtest; le regole di uscita di ogni sistema sono nel PDF. Miglior sistema: dalla pagina Classifica (storia 5 anni, aggiornata il sabato); “non verificato” = eccesso positivo ma senza prove sufficienti.</div>
+<div class="leg" style="padding-top:4px">Confluenza = quante famiglie di sistemi hanno un segnale nella finestra: Trend (Core, Az BUY, Super Best Buy, Parabolic SAR, ADX, Incrocio EMA), Momentum, Indicatori (Compra dal), Inversione (Inversione, MR, SMR), Breakout (Kamal 5). Date di calendario rispetto all’ultima barra di ogni ETF. * classe indicativa. Stato (famiglia Trend): TIENI = almeno una posizione Trend aperta; ESCI = posizioni Trend chiuse negli ultimi 5 giorni; FUORI = nessuna. Guadagno = variazione % da ingresso a uscita (▶ aperta: fino all’ultima chiusura, ■ chiusa), lordo e senza commissioni, non è un backtest; le regole di uscita di ogni sistema sono nel PDF. Miglior sistema: dalla pagina Classifica (storia 5 anni, aggiornata il sabato); “non verificato” = eccesso positivo ma senza prove sufficienti.</div>
 <div class="wrap"><table><thead><tr id="th"></tr></thead><tbody id="tb"></tbody></table></div>
 <script>
 let D=null,M=null,sort={k:"conf",d:-1};const $=id=>document.getElementById(id);
 const fix=n=>String(n).replace(/'/g,"’");
-const FAM=[["Trend",["core","azb","sbb","psar","adx","ema"]],["Momentum",["mom"]],["Indicatori",["cd"]],["Inversione",["inv","mr","smr"]]];
+const FAM=[["Trend",["core","azb","sbb","psar","adx","ema"]],["Momentum",["mom"]],["Indicatori",["cd"]],["Inversione",["inv","mr","smr"]],["Breakout",["k5"]]];
 const CLA={equity:"Azionari",bond:"Obbligazionari",commodity:"Materie prime",crypto:"Cripto",leva_short:"Leva / short"};
 const fill=(id,vals,lab)=>[...new Set(vals.filter(Boolean))].sort().forEach(v=>$(id).add(new Option(lab?lab(v):v,v)));
 fetch("data/classifica_sintesi.json").then(r=>r.ok?r.json():null).then(j=>{M=j;if(D)draw()}).catch(()=>{});
@@ -65,7 +65,7 @@ function rows(){const q=$("q").value.toLowerCase(),s=$("sis").value,W=+$("fin").
  .sort((a,c)=>{const x=get(a,sort.k),y=get(c,sort.k);let o=(x>y?1:x<y?-1:0)*sort.d;return o||(c.nsis-a.nsis)||(a.u<c.u?1:-1)})}
 function draw(){const R=rows();$("cnt").textContent=R.length+" ETF";
  $("tb").innerHTML=R.slice(0,1500).map(r=>`<tr><td><a href="grafico.html?t=${encodeURIComponent(r.t)}">${r.t}</a>${r.nuovo?'<span class="tag new">Acq. nuovo</span>':""}${r.inv?'<span class="tag inv">Inverso</span>':r.lv?'<span class="tag lev">Leva</span>':""}</td><td>${fix(r.n)}</td><td>${r.e}</td><td>${CLA[r.ac]||r.ac||""}${r.acd?"*":""}</td><td>${r.tp||""}</td>`+
- `<td class="conf" title="${FAM.map((f,i)=>f[0]+(r.fam[i]?" ✓":" –")).join(" · ")}">${r.conf}/4 ${r.fam.map(x=>`<i class="f${x?" on":""}"></i>`).join("")}</td><td>${STA(r)}</td><td class="n ${gc(r.sta&&r.sta[1])}">${r.sta&&r.sta[1]!=null?gn(r.sta[1]):""}</td><td title="${tipMG(r)}">${MG(r)}</td><td class="n">${r.p}</td><td class="n ${r.v<0?"neg":"pos"}">${r.v}</td><td>${r.u}</td>`+
+ `<td class="conf" title="${FAM.map((f,i)=>f[0]+(r.fam[i]?" ✓":" –")).join(" · ")}">${r.conf}/${FAM.length} ${r.fam.map(x=>`<i class="f${x?" on":""}"></i>`).join("")}</td><td>${STA(r)}</td><td class="n ${gc(r.sta&&r.sta[1])}">${r.sta&&r.sta[1]!=null?gn(r.sta[1]):""}</td><td title="${tipMG(r)}">${MG(r)}</td><td class="n">${r.p}</td><td class="n ${r.v<0?"neg":"pos"}">${r.v}</td><td>${r.u}</td>`+
  D.sistemi.map(s=>`<td>${r.s[s.id]?`<i class="dot" style="background:${s.colore}"></i>${r.s[s.id]}${SX(r,s)}`:""}</td>`).join("")+"</tr>").join("");
  if(R.length>1500)$("cnt").textContent+=" (mostrati i primi 1500: usa i filtri o scarica l’Excel)"}
 ["q","sis","fin","min","sta","lev","emi","tip","cla","bor","nuovo","ori","aff"].forEach(i=>$(i).addEventListener("input",draw));
