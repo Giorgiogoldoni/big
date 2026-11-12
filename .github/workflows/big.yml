@@ -45,7 +45,7 @@ jobs:
       - name: Prepara il sito
         run: |
           mkdir _site
-          cp index.html grafico.html classifica.html _site/
+          cp index.html grafico.html classifica.html mercato.html _site/
           cp -r data _site/data
       - uses: actions/upload-pages-artifact@v3
         with:
