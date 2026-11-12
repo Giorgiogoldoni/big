@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>big – mercato iShares</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+body{margin:0;background:#fff;color:#1a1a1a;font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}.p{padding:12px 18px}
+h1{margin:0;font-size:20px}h2{margin:0 0 6px;font-size:16px}.sub{color:#666;font-size:12px}.neg{color:#c0392b}.pos{color:#1e8449}
+button,a.b{font:inherit;padding:6px 10px;border:1px solid #c9ccd1;border-radius:6px;background:#fff;cursor:pointer;color:#1a1a1a;text-decoration:none}button:hover,a.b:hover{background:#f3f4f6}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.k{display:flex;flex-wrap:wrap;gap:12px;margin:8px 0}
+.kk{border:1px solid #eceef1;border-radius:8px;padding:8px 12px;min-width:150px}.kk b{display:block;font-size:22px;font-weight:600}.kk span{font-size:12px;color:#666}
+table{border-collapse:collapse;width:100%}th,td{padding:5px 8px;border-bottom:1px solid #eceef1;text-align:left;white-space:nowrap}th{border-bottom:2px solid #d5d8dd}.n{text-align:right}.w{overflow-x:auto}
+svg{max-width:100%;height:auto;display:block}details{margin-top:6px}summary{cursor:pointer;font-weight:600}
+</style></head><body>
+<div class="p row"><a class="b" href="index.html">← Elenco</a><a class="b" href="classifica.html">Classifica sistemi</a></div>
+<div class="p" style="padding-top:0"><h1>Mercato – ETF iShares</h1><div class="sub" id="meta">Caricamento…</div>
+<p class="sub">Lettura descrittiva dei segnali di big sugli ETF iShares: quanti hanno posizioni Trend aperte e quanti segnali nuovi ci sono ogni giorno. Non è una previsione e non è una raccomandazione; le regole di calcolo sono nel PDF.</p></div>
+<div id="out"></div>
+<div class="p row"><button id="xls">Scarica Excel</button><a class="b" href="data/regole_big.pdf" target="_blank">Regole PDF</a></div>
+<div class="p w"><details><summary id="dsum">Classificazione da controllare</summary>
+<p class="sub">ETF iShares la cui classe (azionario o obbligazionario) è stata decisa dal nome perché quella di core è solo di ripiego, o che hanno sigle poco chiare. Per correggerne uno aggiungi il ticker in CORREZIONI nel file scripts/mercato.py.</p>
+<table><thead><tr><th>Ticker</th><th>Nome</th><th>Classe usata</th><th>Motivo</th></tr></thead><tbody id="dub"></tbody></table></details></div>
+<script>
+const $=id=>document.getElementById(id),esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/'/g,"’");
+const pc=v=>v==null?"–":v.toFixed(1).replace(".",",")+"%",GR=[["azionari","ETF azionari iShares"],["obbligazionari","ETF obbligazionari iShares (sezione separata)"]];
+let D;
+function grafico(s){const W=640,H=230,L=40,R=10,T=10,A=120,B=H-30,n=s.length;if(n<2)return"";const x=i=>L+(W-L-R)*i/(n-1),y=v=>T+(A-T)*(1-v/100);
+ const mx=Math.max(1,...s.map(r=>Math.max(r[4],r[5]))),yb=B-30,h=v=>30*v/mx;
+ let g="";[0,25,50,75,100].forEach(v=>g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="#eceef1"/><text x="${L-4}" y="${y(v)+4}" font-size="10" fill="#666" text-anchor="end">${v}%</text>`);
+ const pts=s.map((r,i)=>r[3]==null?null:`${x(i).toFixed(1)},${y(r[3]).toFixed(1)}`).filter(Boolean).join(" ");
+ g+=`<polyline points="${pts}" fill="none" stroke="#1d4ed8" stroke-width="2"/>`;
+ const bw=Math.max(3,(W-L-R)/n*0.35);
+ s.forEach((r,i)=>{g+=`<rect x="${(x(i)-bw).toFixed(1)}" y="${(yb-h(r[4])).toFixed(1)}" width="${bw.toFixed(1)}" height="${h(r[4]).toFixed(1)}" fill="#1e8449"><title>${r[0]}: ${r[4]} ETF con nuove frecce</title></rect><rect x="${x(i).toFixed(1)}" y="${yb}" width="${bw.toFixed(1)}" height="${h(r[5]).toFixed(1)}" fill="#c0392b"><title>${r[0]}: ${r[5]} ETF con uscite Trend</title></rect>`});
+ g+=`<line x1="${L}" x2="${W-R}" y1="${yb}" y2="${yb}" stroke="#c9ccd1"/><text x="${L}" y="${H-4}" font-size="10" fill="#666">${s[0][0]}</text><text x="${W-R}" y="${H-4}" font-size="10" fill="#666" text-anchor="end">${s[n-1][0]}</text>`;
+ g+=`<text x="${L}" y="${A+14}" font-size="10" fill="#666">Ampiezza (linea) · barre: ETF con nuove frecce (verde, in su) e con uscite Trend (rosso, in giù)</text>`;
+ return`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Ampiezza e flusso dei segnali">${g}</svg>`}
+function sezione(id,tit){const g=D.gruppi[id],s=g.serie;if(!s.length||!g.n)return`<div class="p"><h2>${tit}</h2><p class="sub">Nessun ETF in questo gruppo.</p></div>`;
+ const a=s[s.length-1],b=s[0],dv=a[3]!=null&&b[3]!=null?a[3]-b[3]:null;
+ return`<div class="p w"><h2>${tit} (${g.n})</h2><div class="k">
+ <div class="kk"><b>${pc(a[3])}</b><span>Ampiezza il ${a[0]}: ${a[2]} ETF su ${a[1]} con almeno ${D.min_trend} sistemi Trend aperti</span></div>
+ <div class="kk"><b>${pc(b[3])}</b><span>Ampiezza il ${b[0]}${dv==null?"":` · variazione <span class="${dv<0?"neg":"pos"}">${(dv>=0?"+":"")+dv.toFixed(1).replace(".",",")} punti</span>`}</span></div>
+ <div class="kk"><b>${a[4]}</b><span>ETF con nuove frecce di acquisto il ${a[0]}</span></div>
+ <div class="kk"><b>${a[5]}</b><span>ETF con uscite Trend il ${a[0]}</span></div></div>
+ ${grafico(s)}
+ <table><thead><tr><th>Data</th><th class="n">ETF con dati</th><th class="n">Con ≥ ${D.min_trend} Trend</th><th class="n">Ampiezza</th><th class="n">Nuove frecce</th><th class="n">Uscite Trend</th></tr></thead><tbody>${s.slice().reverse().map(r=>`<tr><td>${r[0]}</td><td class="n">${r[1]}</td><td class="n">${r[2]}</td><td class="n">${pc(r[3])}</td><td class="n">${r[4]}</td><td class="n">${r[5]}</td></tr>`).join("")}</tbody></table></div>`}
+fetch("data/mercato.json").then(r=>r.json()).then(d=>{D=d;
+ $("meta").textContent="Ultimo giorno: "+(d.ultima||"–")+" · ultimi "+d.giorni+" giorni di Borsa · dati generati "+d.gen;
+ $("out").innerHTML=GR.map(([id,t])=>sezione(id,t)).join("");
+ const du=d.classi.filter(c=>c[4]);$("dsum").textContent="Classificazione da controllare ("+du.length+" ETF)";
+ $("dub").innerHTML=du.map(c=>`<tr><td><a href="grafico.html?t=${encodeURIComponent(c[0])}">${esc(c[0])}</a></td><td>${esc(c[1])}</td><td>${esc(c[2])}</td><td>${esc(c[3])}</td></tr>`).join("")||'<tr><td colspan="4">Nessun ETF da controllare.</td></tr>';
+}).catch(()=>{$("meta").textContent="Dati non ancora disponibili: lancia il workflow “Aggiorna big” dopo aver caricato i file."});
+$("xls").onclick=()=>{if(!D)return;const wb=XLSX.utils.book_new(),ser=g=>D.gruppi[g].serie.map(r=>({Data:r[0],"ETF con dati":r[1],["Con almeno "+D.min_trend+" sistemi Trend"]:r[2],"Ampiezza %":r[3],"ETF con nuove frecce":r[4],"ETF con uscite Trend":r[5]}));
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ser("azionari")),"Azionari");XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ser("obbligazionari")),"Obbligazionari");
+ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(D.classi.map(c=>({Ticker:c[0],Nome:c[1],Classe:c[2],Motivo:c[3],"Da controllare":c[4]?"Sì":"No"}))),"Classificazione");XLSX.writeFile(wb,"big_mercato_iShares.xlsx")};
+</script></body></html>
