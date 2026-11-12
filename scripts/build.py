@@ -6,6 +6,7 @@ import pandas as pd
 import yfinance as yf
 import systems as S
 import rank
+import mercato as M
 from issuers import issuer
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -79,7 +80,7 @@ def scarica(tickers):
 def scrivi(universo, dati):
     CH.mkdir(parents=True, exist_ok=True)
     gen = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    righe, errori, rank_rows = [], [], []
+    righe, errori, rank_rows, merc_rows = [], [], [], []
     for u in universo:
         d = dati.get(u["t"])
         if d is None: errori.append(u["t"]); continue
@@ -98,6 +99,8 @@ def scrivi(universo, dati):
                   d=[[str(i.date()), r(a), r(b), r(c), r(e_)] for i, (a, b, c, e_) in zip(d.index, d[["Open", "High", "Low", "Close"]].values)],
                   ev=[list(e) for e in ev], tr=meta["tr"])
         (CH / (u["t"].replace(".", "_") + ".json")).write_text(json.dumps(ch, separators=(",", ":")), encoding="utf-8")
+        r_m = M.riga(u, d, ev, meta["tr"])      # pagina Mercato: solo iShares
+        if r_m: merc_rows.append(r_m)
         ultimi = {}
         for e in ev: ultimi[e[1]] = e[0]
         x = {t[0]: [t[1], t[6], t[3], t[5]] for t in meta["tr"]}      # ultima posizione di ogni sistema: ingresso, guadagno %, uscita, motivo
@@ -106,6 +109,7 @@ def scrivi(universo, dati):
     sistemi = [dict(id=s["id"], nome=s["nome"], colore=s["colore"]) for s in S.SYSTEMS]
     (DATA / "index.json").write_text(json.dumps(dict(gen=gen, sistemi=sistemi, righe=righe), separators=(",", ":")), encoding="utf-8")
     (DATA / "errori.json").write_text(json.dumps(errori), encoding="utf-8")
+    M.scrivi(DATA, merc_rows, gen)
     print("titoli con dati:", len(righe), "| senza dati:", len(errori))
     if CLASSIFICA: rank.scrivi(DATA, rank_rows, gen)
 
