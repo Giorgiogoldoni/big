@@ -7,6 +7,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 import systems as S
+import mercato as M
 import rank
 
 OUT = Path(__file__).resolve().parent.parent / "data" / "regole_big.pdf"
@@ -30,6 +31,7 @@ def main():
     for s in S.SYSTEMS:
         f.append(Paragraph('<font color="%s">&#9632;</font> %s' % (s["colore"], s["nome"]), H2)); f += [Paragraph("- " + x.replace("<", "&lt;"), P) for x in s["regole"] + [S.USCITE[s["id"]]["testo"]]]
     f.append(Paragraph("Indicatori solo grafici (senza frecce)", H2)); f += [Paragraph("- " + x.replace("<", "&lt;"), P) for x in S.REGOLE_GRAFICO]
+    f.append(Paragraph("Pagina Mercato (solo ETF iShares)", H2)); f += [Paragraph("- " + x.replace("<", "&lt;"), P) for x in M.REGOLE]
     f.append(Paragraph("Classifica dei sistemi (pagina Classifica, colonna Miglior sistema)", H2)); f += [Paragraph("- " + x, P) for x in rank.REGOLE]
     SimpleDocTemplate(str(OUT), pagesize=A4, leftMargin=18*mm, rightMargin=18*mm, topMargin=16*mm, bottomMargin=16*mm, title="big - regole").build(f)
     print("PDF:", OUT)
