@@ -10,7 +10,7 @@ button{cursor:pointer}button:hover{background:#f3f4f6}label{display:flex;gap:5px
 .wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:1100px}th,td{padding:6px 8px;border-bottom:1px solid #eceef1;text-align:left;white-space:nowrap}
 th{position:sticky;top:0;background:#fff;cursor:pointer;font-weight:600;border-bottom:2px solid #d5d8dd}td.n{text-align:right}.neg{color:#c0392b}.pos{color:#1e8449}
 a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px}
-.tag{font-size:11px;border-radius:4px;padding:1px 5px;margin-left:5px}.new{background:#e8f5e9;color:#1e8449}.lev{background:#fff3e0;color:#b45309}.inv{background:#fde8e8;color:#b42318}
+.tv{font-size:11px;margin-left:6px;color:#1d4ed8}.tag{font-size:11px;border-radius:4px;padding:1px 5px;margin-left:5px}.new{background:#e8f5e9;color:#1e8449}.lev{background:#fff3e0;color:#b45309}.inv{background:#fde8e8;color:#b42318}
 .leg{display:flex;flex-wrap:wrap;gap:12px;padding:0 18px;font-size:12px;color:#555}.conf{font-weight:600}.f{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:2px;background:#d5d8dd}.f.on{background:#1d4ed8}
 </style></head><body>
 <header><h1>big – segnali di acquisto sugli ETF</h1><div class="sub" id="sub">Caricamento…</div></header>
@@ -34,7 +34,7 @@ a{color:#1d4ed8;text-decoration:none}a:hover{text-decoration:underline}.dot{disp
 <div class="leg" style="padding-top:4px">Confluenza = quante famiglie di sistemi hanno un segnale nella finestra: Trend (Core, Az BUY, Super Best Buy, Parabolic SAR, ADX, Incrocio EMA), Momentum, Indicatori (Compra dal), Inversione (Inversione, MR, SMR), Breakout (Kamal 5). Date di calendario rispetto all’ultima barra di ogni ETF. * classe indicativa. Stato (famiglia Trend): TIENI = almeno una posizione Trend aperta; ESCI = posizioni Trend chiuse negli ultimi 5 giorni; FUORI = nessuna. Guadagno = variazione % da ingresso a uscita (▶ aperta: fino all’ultima chiusura, ■ chiusa), lordo e senza commissioni, non è un backtest; le regole di uscita di ogni sistema sono nel PDF. Miglior sistema: dalla pagina Classifica (storia 5 anni, aggiornata il sabato); “non verificato” = eccesso positivo ma senza prove sufficienti.</div>
 <div class="wrap"><table><thead><tr id="th"></tr></thead><tbody id="tb"></tbody></table></div>
 <script>
-let D=null,M=null,sort={k:"conf",d:-1};const $=id=>document.getElementById(id);
+let D=null,M=null,sort={k:"conf",d:-1};const $=id=>document.getElementById(id),TVX={".MI":"MIL",".DE":"XETR",".PA":"EURONEXT",".L":"LSE"},tv=t=>{const m=t.match(/\.[A-Z]+$/),b=m&&TVX[m[0]];return b?"https://www.tradingview.com/chart/?symbol="+encodeURIComponent(b+":"+t.slice(0,-m[0].length)):""};
 const fix=n=>String(n).replace(/'/g,"’");
 const FAM=[["Trend",["core","azb","sbb","psar","adx","ema"]],["Momentum",["mom"]],["Indicatori",["cd"]],["Inversione",["inv","mr","smr"]],["Breakout",["k5"]]];
 const CLA={equity:"Azionari",bond:"Obbligazionari",commodity:"Materie prime",crypto:"Cripto",leva_short:"Leva / short"};
@@ -64,12 +64,12 @@ function rows(){const q=$("q").value.toLowerCase(),s=$("sis").value,W=+$("fin").
   (!lv||(lv=="l")==(r.lv||r.inv))&&(s?r.rec[s]:r.conf>=mn)&&(!$("aff").checked||(r.mg&&r.mg[1]=="ok"))&&(!$("sta").value||(r.sta&&r.sta[0])==$("sta").value))
  .sort((a,c)=>{const x=get(a,sort.k),y=get(c,sort.k);let o=(x>y?1:x<y?-1:0)*sort.d;return o||(c.nsis-a.nsis)||(a.u<c.u?1:-1)})}
 function draw(){const R=rows();$("cnt").textContent=R.length+" ETF";
- $("tb").innerHTML=R.slice(0,1500).map(r=>`<tr><td><a href="grafico.html?t=${encodeURIComponent(r.t)}">${r.t}</a>${r.nuovo?'<span class="tag new">Acq. nuovo</span>':""}${r.inv?'<span class="tag inv">Inverso</span>':r.lv?'<span class="tag lev">Leva</span>':""}</td><td>${fix(r.n)}</td><td>${r.e}</td><td>${CLA[r.ac]||r.ac||""}${r.acd?"*":""}</td><td>${r.tp||""}</td>`+
+ $("tb").innerHTML=R.slice(0,1500).map(r=>`<tr><td><a href="grafico.html?t=${encodeURIComponent(r.t)}">${r.t}</a>${tv(r.t)?`<a class="tv" target="_blank" rel="noopener" href="${tv(r.t)}" title="Apri su TradingView">TV</a>`:""}${r.nuovo?'<span class="tag new">Acq. nuovo</span>':""}${r.inv?'<span class="tag inv">Inverso</span>':r.lv?'<span class="tag lev">Leva</span>':""}</td><td>${fix(r.n)}</td><td>${r.e}</td><td>${CLA[r.ac]||r.ac||""}${r.acd?"*":""}</td><td>${r.tp||""}</td>`+
  `<td class="conf" title="${FAM.map((f,i)=>f[0]+(r.fam[i]?" ✓":" –")).join(" · ")}">${r.conf}/${FAM.length} ${r.fam.map(x=>`<i class="f${x?" on":""}"></i>`).join("")}</td><td>${STA(r)}</td><td class="n ${gc(r.sta&&r.sta[1])}">${r.sta&&r.sta[1]!=null?gn(r.sta[1]):""}</td><td title="${tipMG(r)}">${MG(r)}</td><td class="n">${r.p}</td><td class="n ${r.v<0?"neg":"pos"}">${r.v}</td><td>${r.u}</td>`+
  D.sistemi.map(s=>`<td>${r.s[s.id]?`<i class="dot" style="background:${s.colore}"></i>${r.s[s.id]}${SX(r,s)}`:""}</td>`).join("")+"</tr>").join("");
  if(R.length>1500)$("cnt").textContent+=" (mostrati i primi 1500: usa i filtri o scarica l’Excel)"}
 ["q","sis","fin","min","sta","lev","emi","tip","cla","bor","nuovo","ori","aff"].forEach(i=>$(i).addEventListener("input",draw));
-$("xls").onclick=()=>{const R=rows().map(r=>{const o={Ticker:r.t,Nome:r.n,ISIN:r.i,Emittente:r.e,Classe:CLA[r.ac]||r.ac||"",Tipo:r.tp||"",Leva:r.lv?"Sì":"",Inverso:r.inv?"Sì":"",Borsa:r.b,Prezzo:r.p,"Var %":r.v,"Ultima barra":r.u,
+$("xls").onclick=()=>{const R=rows().map(r=>{const o={Ticker:r.t,TradingView:tv(r.t),Nome:r.n,ISIN:r.i,Emittente:r.e,Classe:CLA[r.ac]||r.ac||"",Tipo:r.tp||"",Leva:r.lv?"Sì":"",Inverso:r.inv?"Sì":"",Borsa:r.b,Prezzo:r.p,"Var %":r.v,"Ultima barra":r.u,
  ["Confluenza ("+$("fin").value+"gg)"]:r.conf,"Stato Trend":r.sta?r.sta[0]:"","Guadagno Trend %":r.sta&&r.sta[1]!=null?r.sta[1]:"","Core ora":r.core||"","Acq. nuovo":r.nuovo?"Sì":"",["Miglior sistema +"+$("ori").value]:(r.mg&&r.mg[0]?D.sistemi.find(q=>q.id==r.mg[0]).nome:""),"Esito classifica":r.mg?ESITO[r.mg[1]]:""};
  FAM.forEach((f,i)=>o["Famiglia "+f[0]]=r.fam[i]?"Sì":"");D.sistemi.forEach(s=>{o["Ultimo segnale "+s.nome]=r.s[s.id]||"";const x=r.x&&r.x[s.id];o["Guadagno % "+s.nome]=x?x[1]:"";o["Stato "+s.nome]=x?(x[2]?"Chiusa "+x[2]:"Aperta"):""});return o});
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(R),"big");XLSX.writeFile(wb,"big_segnali.xlsx")};
